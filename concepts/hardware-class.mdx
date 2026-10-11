@@ -1,0 +1,246 @@
+---
+title: "Sharing hardware with external hardware classes"
+sidebarTitle: "Hardware Class"
+description: "Use a dedicated hardware class like RobotHardware to initialize devices once and share them across multiple OpModes without duplicating configuration code."
+---
+
+Every competitive FTC robot eventually outgrows a single OpMode file. When your TeleOp and your three Autonomous routines all start with the same twenty lines of motor initialization, you have a maintenance problem: change one device name and you must hunt down every copy. The solution the SDK recommends is an **external hardware class** — a plain Java class that owns all your hardware objects, exposes clean methods to control them, and is instantiated by whichever OpMode needs it. This page walks through the `RobotHardware.java` sample included in the SDK and shows you exactly how to adopt the pattern for your own robot.
+
+## Why copying initialization code is a trap
+
+When hardware is initialized independently in each OpMode, three problems compound over a season:
+
+- **Name drift** — device names in the Robot Configuration (e.g. `"left_drive"`) must match the strings passed to `hardwareMap.get()`. One typo causes a runtime `IllegalArgumentException` that is hard to trace.
+- **Direction drift** — motor direction settings live in multiple places, so a last-minute reversal fix in TeleOp silently breaks Autonomous.
+- **Constant drift** — servo midpoints, arm power limits, and speed constants get copy-pasted and diverge when one file is updated and the other is not.
+
+A hardware class solves all three by providing a single source of truth.
+
+## How the pattern works
+
+The hardware class is **not** an OpMode. It does not extend `LinearOpMode` or `OpMode`. Instead, it receives a reference to the calling OpMode in its constructor, which gives it access to `hardwareMap` and `telemetry` without being an OpMode itself.
+
+```java
+public RobotHardware(LinearOpMode opmode) {
+    myOpMode = opmode;
+}
+```
+
+The OpMode creates the hardware object, passing `this` as the reference:
+
+```java
+RobotHardware robot = new RobotHardware(this);
+```
+
+Then in `runOpMode()`, a single call to `robot.init()` replaces the entire hardware setup block.
+
+## RobotHardware.java walkthrough
+
+The `RobotHardware` sample (located in `TeamCode/src/main/java/...external/samples/`) is a complete, runnable example of this pattern. Here is a guided tour of every section.
+
+### Private fields — hardware objects are hidden
+
+```java
+private DcMotor leftDrive  = null;
+private DcMotor rightDrive = null;
+private DcMotor armMotor   = null;
+private Servo   leftHand   = null;
+private Servo   rightHand  = null;
+```
+
+All hardware objects are declared `private`. OpModes never touch them directly — they call methods instead. This means you can swap a motor for a servo, add an encoder, or rename a config entry and the change is confined to this one file.
+
+### Public constants — shared tuning values
+
+```java
+public static final double MID_SERVO      =  0.5;
+public static final double HAND_SPEED     =  0.02;  // position change per loop
+public static final double ARM_UP_POWER   =  0.45;
+public static final double ARM_DOWN_POWER = -0.45;
+```
+
+These `public static final` constants are the **one exception** to the "keep it private" rule. They are read-only tuning values that OpModes legitimately need (for example, to clamp a hand offset). Because they are `static final`, there is no risk of an OpMode accidentally mutating them.
+
+### Constructor and `init()` method
+
+```java
+public RobotHardware(LinearOpMode opmode) {
+    myOpMode = opmode;
+}
+
+public void init() {
+    // Retrieve motors from the active hardware configuration
+    leftDrive  = myOpMode.hardwareMap.get(DcMotor.class, "left_drive");
+    rightDrive = myOpMode.hardwareMap.get(DcMotor.class, "right_drive");
+    armMotor   = myOpMode.hardwareMap.get(DcMotor.class, "arm");
+
+    // Set directions so that positive power drives the robot forward
+    leftDrive.setDirection(DcMotor.Direction.REVERSE);
+    rightDrive.setDirection(DcMotor.Direction.FORWARD);
+
+    // Retrieve servos and move them to a known starting position
+    leftHand  = myOpMode.hardwareMap.get(Servo.class, "left_hand");
+    rightHand = myOpMode.hardwareMap.get(Servo.class, "right_hand");
+    leftHand.setPosition(MID_SERVO);
+    rightHand.setPosition(MID_SERVO);
+
+    myOpMode.telemetry.addData(">", "Hardware Initialized");
+    myOpMode.telemetry.update();
+}
+```
+
+`init()` must be called exactly once, before `waitForStart()`. All the device names (`"left_drive"`, `"arm"`, etc.) live here and nowhere else.
+
+### Drive methods
+
+**`driveRobot(double Drive, double Turn)`** implements blended differential (POV) drive. It adds drive and turn to get left power, subtracts to get right power, then scales both down if either would exceed 1.0:
+
+```java
+public void driveRobot(double Drive, double Turn) {
+    double left  = Drive + Turn;
+    double right = Drive - Turn;
+
+    double max = Math.max(Math.abs(left), Math.abs(right));
+    if (max > 1.0) {
+        left  /= max;
+        right /= max;
+    }
+
+    setDrivePower(left, right);
+}
+```
+
+**`setDrivePower(double leftWheel, double rightWheel)`** is the lower-level method that sets raw power directly:
+
+```java
+public void setDrivePower(double leftWheel, double rightWheel) {
+    leftDrive.setPower(leftWheel);
+    rightDrive.setPower(rightWheel);
+}
+```
+
+### Arm and hand methods
+
+```java
+public void setArmPower(double power) {
+    armMotor.setPower(power);
+}
+
+public void setHandPositions(double offset) {
+    offset = Range.clip(offset, -0.5, 0.5);
+    leftHand.setPosition(MID_SERVO + offset);
+    rightHand.setPosition(MID_SERVO - offset);
+}
+```
+
+`setHandPositions` mirrors the two servos around `MID_SERVO`. Passing `+0.5` fully opens one side while the other closes — a common claw mechanism. `Range.clip` prevents out-of-range servo commands.
+
+## Using the class in an OpMode
+
+The full `ConceptExternalHardwareClass.java` sample demonstrates how clean the OpMode becomes:
+
+```java
+@TeleOp(name = "Concept: Robot Hardware Class", group = "Robot")
+public class ConceptExternalHardwareClass extends LinearOpMode {
+
+    // Instantiate hardware class, passing 'this' as the opmode reference
+    RobotHardware robot = new RobotHardware(this);
+
+    @Override
+    public void runOpMode() {
+        double handOffset = 0;
+
+        robot.init();       // One call replaces all hardware setup
+        waitForStart();
+
+        while (opModeIsActive()) {
+            // Drive
+            double drive = -gamepad1.left_stick_y;
+            double turn  =  gamepad1.right_stick_x;
+            robot.driveRobot(drive, turn);
+
+            // Claw
+            if (gamepad1.right_bumper)
+                handOffset += robot.HAND_SPEED;
+            else if (gamepad1.left_bumper)
+                handOffset -= robot.HAND_SPEED;
+            handOffset = Range.clip(handOffset, -0.5, 0.5);
+            robot.setHandPositions(handOffset);
+
+            // Arm
+            if (gamepad1.y)
+                robot.setArmPower(robot.ARM_UP_POWER);
+            else if (gamepad1.a)
+                robot.setArmPower(robot.ARM_DOWN_POWER);
+            else
+                robot.setArmPower(0);
+
+            telemetry.addData("Drive Power", "%.2f", drive);
+            telemetry.addData("Hand Offset", "%.2f", handOffset);
+            telemetry.update();
+
+            sleep(50);
+        }
+    }
+}
+```
+
+The OpMode has zero `hardwareMap.get()` calls. All string device names are in `RobotHardware.java`.
+
+## Creating your own hardware class
+
+<Steps>
+  <Step title="Create a new Java file in TeamCode">
+    In Android Studio, right-click your `teamcode` package and choose **New → Java Class**. Name it something descriptive — `RobotHardware`, `DriveBase`, or `Subsystem` are all reasonable.
+
+    Do **not** annotate it with `@TeleOp` or `@Autonomous`. It is not an OpMode.
+  </Step>
+
+  <Step title="Add a LinearOpMode field and constructor">
+    ```java
+    public class RobotHardware {
+        private LinearOpMode myOpMode = null;
+
+        public RobotHardware(LinearOpMode opmode) {
+            myOpMode = opmode;
+        }
+    }
+    ```
+  </Step>
+
+  <Step title="Declare all hardware objects as private fields">
+    Add `private DcMotor`, `private Servo`, `private IMU`, etc. at the top of the class. Initialize them to `null` so the compiler knows they are intentionally un-assigned before `init()`.
+  </Step>
+
+  <Step title="Write an init() method">
+    Retrieve every hardware device inside `init()` using `myOpMode.hardwareMap.get(...)`. Set directions, run modes, and starting positions here. End with a telemetry confirmation message.
+  </Step>
+
+  <Step title="Add public constants for tuning values">
+    Any value your OpMode needs to reference (speed limits, servo midpoints, power constants) should be a `public static final double` in the hardware class. This avoids scattering magic numbers through your OpMode files.
+  </Step>
+
+  <Step title="Expose behavior through public methods — not hardware objects">
+    Write methods like `driveRobot()`, `setLiftPosition()`, or `openClaw()`. Keep the underlying hardware objects `private`. If you later swap a DC motor for a servo, only the hardware class changes.
+  </Step>
+
+  <Step title="Instantiate in each OpMode">
+    ```java
+    RobotHardware robot = new RobotHardware(this);
+    ```
+    Call `robot.init()` at the top of `runOpMode()`, before `waitForStart()`.
+  </Step>
+</Steps>
+
+<Tip>
+  Keep all `DcMotor`, `Servo`, `IMU`, and sensor objects **private** inside your hardware class and expose only public methods. This discipline pays off when you change hardware mid-season — the refactor stays inside a single file, and every OpMode that calls `robot.init()` picks up the fix automatically.
+</Tip>
+
+## Benefits summary
+
+| Approach | Device names live in… | Constants live in… | Direction settings live in… |
+|---|---|---|---|
+| Copy-paste per OpMode | Every OpMode file | Every OpMode file | Every OpMode file |
+| Hardware class | `RobotHardware.java` only | `RobotHardware.java` only | `RobotHardware.java` only |
+
+For more on how `hardwareMap` resolves device names to physical hardware at runtime, see [hardware/hardware-map](/hardware/hardware-map). If your hardware class includes an IMU, see [hardware/imu](/hardware/imu) for initialization details.

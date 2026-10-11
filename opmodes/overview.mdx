@@ -1,0 +1,139 @@
+---
+title: "OpMode overview: structure, lifecycle, and registration"
+sidebarTitle: "Overview"
+description: "OpModes are the programs that run on your FTC robot. Learn how they are structured, registered, and selected from the Driver Station app."
+---
+
+An **OpMode** (short for *operational mode*) is a Java class that represents a single robot program. Every program you write for your FTC robot — whether it controls the robot during the driver-controlled period or executes a fully automated routine — is an OpMode. The Driver Station app lists all registered OpModes by name, and when a driver selects one and presses INIT, the Robot Controller instantiates and runs that class.
+
+## Two base types
+
+The SDK provides two abstract base classes. You extend exactly one of them for each OpMode you write.
+
+| Base class | Style | Best for |
+|---|---|---|
+| `LinearOpMode` | Sequential, blocking | Autonomous routines; straightforward TeleOp |
+| `OpMode` | Iterative, callback-driven | TeleOp with clean state-machine patterns |
+
+- **`LinearOpMode`** — You override a single `runOpMode()` method and write code from top to bottom. Blocking calls like `waitForStart()` and `sleep()` pause execution until the condition is met.
+- **`OpMode`** (iterative) — The SDK calls a set of lifecycle methods for you (`init()`, `init_loop()`, `start()`, `loop()`, `stop()`). There is no blocking: each method must return quickly so the SDK can keep processing.
+
+See [Linear OpMode](opmodes/linear-opmode) and [Iterative OpMode](opmodes/iterative-opmode) for full details and complete code examples.
+
+## OpMode lifecycle
+
+Every OpMode — regardless of base class — moves through the same lifecycle driven by the driver's actions on the Driver Station.
+
+<Steps>
+  <Step title="INIT">
+    The driver presses **INIT**. Hardware is mapped, sensors are configured, and telemetry can report readiness. The robot should not move.
+  </Step>
+  <Step title="INIT_LOOP">
+    Runs repeatedly between INIT and START. Use this phase to poll sensors, calibrate gyros, or display status while waiting for the driver to press START.
+  </Step>
+  <Step title="START">
+    The driver presses **START (▶)**. A one-time start callback fires — in `LinearOpMode` this is where `waitForStart()` unblocks; in iterative OpMode the `start()` method is called.
+  </Step>
+  <Step title="LOOP / RUN">
+    The main body of your program executes. In `LinearOpMode` this is the code after `waitForStart()`. In iterative OpMode the SDK calls `loop()` repeatedly.
+  </Step>
+  <Step title="STOP">
+    The driver presses **STOP (■)**, or the match timer expires. Motors are powered off by the SDK after the stop handler completes.
+  </Step>
+</Steps>
+
+## Registration: annotations
+
+The SDK discovers OpModes automatically through Java annotations. You do **not** need to edit any registration file — simply place your class in your team's package, annotate it, and rebuild.
+
+<Tabs>
+  <Tab title="@TeleOp">
+    Use `@TeleOp` for driver-controlled programs. The `name` parameter sets the label shown on the Driver Station; the optional `group` parameter organizes OpModes into collapsible sections.
+
+    ```java
+    import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+    import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
+
+    @TeleOp(name = "My TeleOp", group = "Competition")
+    public class MyTeleOp extends LinearOpMode {
+        @Override
+        public void runOpMode() {
+            waitForStart();
+            while (opModeIsActive()) {
+                // drive logic here
+            }
+        }
+    }
+    ```
+  </Tab>
+  <Tab title="@Autonomous">
+    Use `@Autonomous` for pre-programmed autonomous routines. These appear in the **Autonomous** section of the Driver Station, separate from TeleOp entries.
+
+    ```java
+    import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
+    import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
+
+    @Autonomous(name = "Red: Park", group = "Competition")
+    public class RedParkAuto extends LinearOpMode {
+        @Override
+        public void runOpMode() {
+            // hardware init
+            waitForStart();
+            // autonomous sequence
+        }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Annotation parameters
+
+Both `@TeleOp` and `@Autonomous` accept the same two parameters:
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | `String` | Yes | Label displayed on the Driver Station OpMode list |
+| `group` | `String` | No | Groups related OpModes together under a collapsible heading |
+
+If `group` is omitted, the OpMode appears at the top level of its list (TeleOp or Autonomous) with no grouping.
+
+## The @Disabled annotation
+
+All SDK sample files are annotated with `@Disabled`, which prevents them from appearing on the Driver Station. This keeps the sample library from cluttering a competition phone while still making the source code available as a reference.
+
+<Note>
+  When you copy a sample into your `TeamCode` module, **remove or comment out the `@Disabled` line** before deploying to your robot. Until you do, the OpMode will never appear on the Driver Station — no matter what other annotations are present.
+</Note>
+
+```java
+@TeleOp(name = "Basic: Linear OpMode", group = "Linear Opmode")
+@Disabled   // <-- remove this line in your copy
+public class BasicOpMode_Linear extends LinearOpMode { ... }
+```
+
+## How FtcOpModeRegister works
+
+The `FtcOpModeRegister` class (in `FtcRobotController/internal/`) implements the `OpModeRegister` interface. When the SDK starts, it calls `FtcOpModeRegister.register(OpModeManager)`. In modern SDK versions this method body is intentionally empty — annotation scanning handles everything automatically.
+
+```java
+public void register(OpModeManager manager) {
+    /**
+     * Any manual OpMode class registrations should go here.
+     */
+}
+```
+
+A legacy approach — calling `manager.register()` explicitly inside this method — is **retired** as of recent SDK releases. Avoid modifying `FtcOpModeRegister` directly; doing so makes future SDK updates harder to integrate.
+
+<Note>
+  Place your OpMode classes in `TeamCode/src/main/java/org/firstinspires/ftc/teamcode/` (or any sub-package). As long as they have a `@TeleOp` or `@Autonomous` annotation and are not `@Disabled`, the SDK will find and register them automatically at build time.
+</Note>
+
+## Driver Station display
+
+The Driver Station shows two separate lists — **TeleOp** and **Autonomous** — populated from the respective annotations. Within each list:
+
+- OpModes without a `group` parameter appear at the top, sorted alphabetically by name.
+- OpModes with a `group` parameter are sorted into labelled sections, with groups appearing after ungrouped entries.
+
+Teams typically use `group` to separate practice programs from competition-ready ones, or to label which alliance a routine is designed for (e.g., `group = "Red Alliance"`).

@@ -1,0 +1,229 @@
+---
+title: "Universal IMU interface for BNO055 and BHI260AP sensors"
+sidebarTitle: "IMU"
+description: "Use the universal IMU interface to read yaw, pitch, and roll angles from either the BNO055 or BHI260AP IMU. Specify your REV Hub mounting orientation for accurate readings."
+---
+
+SDK 8.1 introduced a single universal `IMU` interface that works with both the BNO055 chip found in older REV Expansion Hubs and Control Hubs, and the newer BHI260AP chip found in current Control Hubs. Instead of writing separate code for each sensor generation, you configure the hub's physical mounting orientation once and then read robot-centric yaw, pitch, and roll angles regardless of which chip is underneath. This page explains how to determine your hub type, how to describe its mounting orientation, and how to read angles from your OpMode.
+
+## Which IMU chip do you have?
+
+Open the Robot Controller web interface in a browser (navigate to `http://192.168.43.1:8080` on the RC phone's access-point network, or `http://192.168.49.1:8080` on a Control Hub), go to **Manage → About**, and look for the IMU model listed under the Control Hub section. You will see either **BNO055** (older hardware) or **BHI260AP** (current Control Hub production). The universal `IMU` interface handles both transparently — you do not need to change any application code.
+
+<Note>
+  The older `BNO055IMU` interface still compiles and runs, but it is hub-specific and is not the recommended path for new code. Use the universal `IMU` interface from `com.qualcomm.robotcore.hardware.IMU` for all new projects.
+</Note>
+
+## Why mounting orientation matters
+
+The IMU chip is soldered to the REV Hub PCB and measures rotation relative to **the hub's own axes**. Your robot, however, is driving forward, turning, and tilting relative to **the robot's axes**. These two coordinate systems only match when the hub is mounted flat and level with the USB ports pointing forward — a layout most teams never use.
+
+The universal `IMU` interface solves this with `RevHubOrientationOnRobot`: you tell the SDK where the hub's logo and USB port are pointing on the robot, and the SDK rotates the raw sensor data into the robot frame automatically. Once configured correctly, **positive yaw always means counter-clockwise rotation** of your robot, positive pitch means the front of the robot is tipping upward, and positive roll means the left side of the robot is tipping upward — no matter how the hub is physically mounted.
+
+## Orthogonal vs. non-orthogonal mounting
+
+<Tabs>
+  <Tab title="Orthogonal (most common)">
+    Your hub is orthogonally mounted if it sits on a flat face of your robot — horizontally on the floor of the chassis, vertically on a side panel, etc. — and has only been rotated in multiples of 90 degrees. In this case, both the printed logo and the USB ports point in one of six axis-aligned directions: `FORWARD`, `BACKWARD`, `UP`, `DOWN`, `LEFT`, or `RIGHT`.
+
+    Use `SensorIMUOrthogonal.java` as your starting point. You only need two enum values:
+
+    ```java
+    RevHubOrientationOnRobot.LogoFacingDirection logoDirection =
+        RevHubOrientationOnRobot.LogoFacingDirection.UP;       // logo printed on top face
+    RevHubOrientationOnRobot.UsbFacingDirection usbDirection =
+        RevHubOrientationOnRobot.UsbFacingDirection.FORWARD;   // USB ports face the front of the robot
+
+    RevHubOrientationOnRobot orientationOnRobot =
+        new RevHubOrientationOnRobot(logoDirection, usbDirection);
+    ```
+
+    The default orientation (logo UP, USB FORWARD) corresponds to a hub lying flat on the robot floor with the USB ports facing the front. It is the most common FTC mounting.
+  </Tab>
+  <Tab title="Non-orthogonal (angled)">
+    If your hub is mounted on an angled plate — say, tilted 30 degrees on a sloped battery tray — use `SensorIMUNonOrthogonal.java`. You describe the orientation as a sequence of X, Y, and Z rotations applied to the hub's default position (logo UP, USB FORWARD):
+
+    ```java
+    // Import the static helper
+    import static com.qualcomm.hardware.rev.RevHubOrientationOnRobot.xyzOrientation;
+
+    // Example: hub tilted 60° upward from horizontal (sloped back plate, USB out the top)
+    double xRotation = 60;  // degrees, positive = front edge tilts up
+    double yRotation =  0;
+    double zRotation =  0;
+
+    Orientation hubRotation = xyzOrientation(xRotation, yRotation, zRotation);
+    RevHubOrientationOnRobot orientationOnRobot =
+        new RevHubOrientationOnRobot(hubRotation);
+    ```
+
+    Rotations are applied in X → Y → Z order using right-hand rule. The source file `SensorIMUNonOrthogonal.java` includes detailed worked examples for a variety of common non-orthogonal configurations in its comments.
+  </Tab>
+</Tabs>
+
+## Initializing the IMU
+
+Retrieve the IMU from `hardwareMap` and call `initialize()` with your orientation parameters **before** `waitForStart()`:
+
+```java
+// from SensorIMUOrthogonal.java
+IMU imu = hardwareMap.get(IMU.class, "imu");
+
+RevHubOrientationOnRobot.LogoFacingDirection logoDirection =
+    RevHubOrientationOnRobot.LogoFacingDirection.UP;
+RevHubOrientationOnRobot.UsbFacingDirection usbDirection =
+    RevHubOrientationOnRobot.UsbFacingDirection.FORWARD;
+
+RevHubOrientationOnRobot orientationOnRobot =
+    new RevHubOrientationOnRobot(logoDirection, usbDirection);
+
+// This call throws IllegalArgumentException if you supply two conflicting directions
+// (e.g. logo FORWARD and USB also FORWARD — both can't occupy the same axis).
+imu.initialize(new IMU.Parameters(orientationOnRobot));
+```
+
+<Warning>
+  Passing two directions that map to the same physical axis (for example, `LogoFacingDirection.UP` and `UsbFacingDirection.UP`) causes `initialize()` to throw an `IllegalArgumentException`. The `ConceptExploringIMUOrientation` sample catches this exception and marks the orientation as invalid — build similar validation into your own code if you allow dynamic orientation switching.
+</Warning>
+
+## Reading yaw, pitch, and roll
+
+Call `getRobotYawPitchRollAngles()` each loop iteration. The returned `YawPitchRollAngles` object lets you request angles in either degrees or radians:
+
+```java
+YawPitchRollAngles orientation = imu.getRobotYawPitchRollAngles();
+
+double yawDeg   = orientation.getYaw(AngleUnit.DEGREES);    // heading, –180 to +180
+double pitchDeg = orientation.getPitch(AngleUnit.DEGREES);  // front tilt
+double rollDeg  = orientation.getRoll(AngleUnit.DEGREES);   // side tilt
+```
+
+### Angle conventions
+
+| Angle | Axis | Increases when… |
+|---|---|---|
+| **Yaw** | Z (vertical) | Robot rotates **counter-clockwise** when viewed from above |
+| **Pitch** | X (left-right) | Front of robot tips **upward** |
+| **Roll** | Y (front-back) | Left side of robot tips **upward** |
+
+Yaw is reported in the range **–180° to +180°** (wrapping). It is the value most commonly used for field-centric driving and turning-to-heading autonomous routines.
+
+## Reading angular velocity
+
+To get the rate of rotation (degrees per second or radians per second), call `getRobotAngularVelocity()`:
+
+```java
+AngularVelocity angularVelocity =
+    imu.getRobotAngularVelocity(AngleUnit.DEGREES);
+
+double yawRate   = angularVelocity.zRotationRate;  // deg/s about Z
+double pitchRate = angularVelocity.xRotationRate;  // deg/s about X
+double rollRate  = angularVelocity.yRotationRate;  // deg/s about Y
+```
+
+## Resetting yaw
+
+At the start of a match (or whenever you want to redefine "forward"), call `resetYaw()` to set the current heading to zero:
+
+```java
+imu.resetYaw();
+```
+
+In the official samples, the Y button on gamepad 1 triggers a yaw reset — a handy pattern for TeleOp:
+
+```java
+if (gamepad1.y) {
+    imu.resetYaw();
+}
+```
+
+## Complete initialization + reading loop
+
+The following is the core logic from `SensorIMUOrthogonal.java`, showing the full lifecycle from retrieval to display:
+
+```java
+@TeleOp(name = "Sensor: IMU Orthogonal", group = "Sensor")
+public class SensorIMUOrthogonal extends LinearOpMode {
+
+    IMU imu;
+
+    @Override
+    public void runOpMode() throws InterruptedException {
+
+        // 1. Retrieve the IMU from hardwareMap
+        imu = hardwareMap.get(IMU.class, "imu");
+
+        // 2. Describe how the hub is mounted on the robot
+        RevHubOrientationOnRobot.LogoFacingDirection logoDirection =
+            RevHubOrientationOnRobot.LogoFacingDirection.UP;
+        RevHubOrientationOnRobot.UsbFacingDirection usbDirection =
+            RevHubOrientationOnRobot.UsbFacingDirection.FORWARD;
+
+        RevHubOrientationOnRobot orientationOnRobot =
+            new RevHubOrientationOnRobot(logoDirection, usbDirection);
+
+        // 3. Initialize with the mounting orientation
+        imu.initialize(new IMU.Parameters(orientationOnRobot));
+
+        // 4. Loop: poll angles and display on Driver Station
+        while (!isStopRequested()) {
+
+            // Y button resets yaw to zero
+            if (gamepad1.y) {
+                telemetry.addData("Yaw", "Resetting\n");
+                imu.resetYaw();
+            } else {
+                telemetry.addData("Yaw", "Press Y (triangle) to reset\n");
+            }
+
+            YawPitchRollAngles orientation = imu.getRobotYawPitchRollAngles();
+            AngularVelocity angularVelocity =
+                imu.getRobotAngularVelocity(AngleUnit.DEGREES);
+
+            telemetry.addData("Hub orientation",
+                "Logo=%s   USB=%s", logoDirection, usbDirection);
+            telemetry.addData("Yaw (Z)",
+                "%.2f Deg. (Heading)", orientation.getYaw(AngleUnit.DEGREES));
+            telemetry.addData("Pitch (X)",
+                "%.2f Deg.", orientation.getPitch(AngleUnit.DEGREES));
+            telemetry.addData("Roll (Y)",
+                "%.2f Deg.", orientation.getRoll(AngleUnit.DEGREES));
+            telemetry.addData("Yaw velocity",
+                "%.2f Deg/Sec", angularVelocity.zRotationRate);
+            telemetry.addData("Pitch velocity",
+                "%.2f Deg/Sec", angularVelocity.xRotationRate);
+            telemetry.addData("Roll velocity",
+                "%.2f Deg/Sec", angularVelocity.yRotationRate);
+            telemetry.update();
+        }
+    }
+}
+```
+
+## Finding the right orientation parameters
+
+<Tip>
+  Run the `ConceptExploringIMUOrientation` OpMode (found in the external samples) to determine the correct `logoFacingDirection` and `usbFacingDirection` values for your specific hub mounting **before** writing your autonomous code. The sample lets you cycle through every valid combination using the gamepad bumpers and triggers while you physically tilt the robot and watch the yaw/pitch/roll values respond correctly. Once you find the combination where all three axes behave as expected, copy those two enum values into your OpMode.
+</Tip>
+
+## Migrating from the old `BNO055IMU` interface
+
+<Warning>
+  The old `BNO055IMU` interface reports angles in the **hub's own coordinate system**, not the robot's. This means pitch and roll values are completely different from the universal `IMU` interface even when the hub is mounted in exactly the same position. If you copy autonomous heading code from a pre-8.1 project, you must verify and likely update all angle references after switching to the new interface.
+</Warning>
+
+The key differences:
+
+| | Old `BNO055IMU` | New universal `IMU` |
+|---|---|---|
+| Coordinate frame | Hub-relative | Robot-relative (corrected by orientation) |
+| Supported chips | BNO055 only | BNO055 and BHI260AP |
+| Yaw direction | Positive = CW (hub-dependent) | Positive = CCW (consistent) |
+| Orientation config | `BNO055IMU.Parameters` | `IMU.Parameters` + `RevHubOrientationOnRobot` |
+
+## Next steps
+
+- Retrieve the IMU from the hardware map → [HardwareMap](/hardware/hardware-map)
+- Read other sensors → [Sensors](/hardware/sensors)
+- Control drive motors with a heading target → [Motors & Servos](/hardware/motors-servos)
+- Learn about OpMode lifecycle → [OpModes overview](/opmodes/overview)

@@ -1,0 +1,174 @@
+---
+title: "FTC SDK sample OpModes: naming conventions and usage"
+sidebarTitle: "Overview"
+description: "The SDK ships with a library of sample OpModes demonstrating hardware control, autonomous navigation, and advanced concepts. Learn the naming system and how to use them."
+---
+
+The FTC Robot Controller SDK includes a rich library of sample OpModes covering everything from bare-bones structure examples to advanced autonomous navigation with gyro correction and computer vision. Before you write a single line of your own code, spending time reading through these samples is one of the most effective ways to understand how the SDK works — they are the official reference implementations for every major hardware and programming pattern.
+
+## Where samples live
+
+All samples are located at:
+
+```
+FtcRobotController/src/main/java/org/firstinspires/ftc/robotcontroller/external/samples/
+```
+
+This folder ships read-only as part of the SDK module. You should **never edit files inside the `samples` folder directly** — any changes you make there will be overwritten the next time you update the SDK.
+
+<Note>
+  Always copy samples into your **TeamCode** package before modifying them. In Android Studio, right-click the sample class → **Copy** → navigate to your TeamCode package → **Paste**. Android Studio automatically renames both the file and the class declaration to match the name you choose, and updates the package statement. This is the only safe way to work with samples.
+</Note>
+
+## The `@Disabled` annotation
+
+Every sample in the SDK includes the `@Disabled` annotation directly above the class declaration:
+
+```java
+@Autonomous(name="Robot: Auto Drive By Encoder", group="Robot")
+@Disabled
+public class RobotAutoDriveByEncoder_Linear extends LinearOpMode {
+```
+
+This prevents the sample from appearing in the Driver Station OpMode list. When you copy a sample to TeamCode and are ready to test it on the robot, **remove or comment out the `@Disabled` line**. Forgetting to do so is one of the most common reasons a new OpMode doesn't show up on the Driver Station.
+
+---
+
+## Naming conventions
+
+Sample class names follow a structured naming convention that tells you exactly what a sample does before you open it. The name is composed of a **prefix**, a **topic or action**, and a **suffix** indicating OpMode type.
+
+### Prefix: what category is it?
+
+| Prefix | Meaning |
+|---|---|
+| `Basic` | A minimally functional OpMode illustrating the skeleton/structure of a particular style of OpMode. These are bare bones examples — a good first read. |
+| `Sensor` | Shows how to read a specific sensor. Not intended to drive a robot; just shows the minimal code to read and display sensor values. |
+| `Robot` | Assumes a simple two-motor differential drive base. Used for common baseline driving OpModes or to demonstrate navigation with sensors. |
+| `Concept` | Illustrates one specific function or concept (state machines, bulk reads, rumble feedback, etc.). Each Concept sample tries to demonstrate only a single idea so they are easy to find by name. |
+
+### Class name patterns
+
+After the prefix, the rest of the name is constructed as follows:
+
+- **Sensor samples:** `Sensor – Company – Type`  
+  *Example: `SensorBNO055IMU` → Bosch BNO055 IMU*
+
+- **Robot samples:** `Robot – Mode – Action – OpModeType`  
+  *Example: `RobotAutoDriveByEncoder_Linear` → Autonomous, drives by encoder, LinearOpMode*
+
+- **Concept samples:** `Concept – Topic – OpModeType`  
+  *Example: `ConceptTensorFlowObjectDetection` → TensorFlow object detection concept*
+
+### Suffix: which OpMode base class?
+
+| Suffix | Base class | When to use |
+|---|---|---|
+| `_Linear` | `LinearOpMode` | Sequential, top-to-bottom code. Best for autonomous. Also works for TeleOp. |
+| `_Iterative` | `OpMode` | Callback-based. The SDK calls `loop()` repeatedly. Familiar if you know Arduino-style programming. |
+
+Samples without a suffix (e.g., `RobotHardware`) are helper classes, not runnable OpModes.
+
+---
+
+## Complete sample listing
+
+<Accordion title="Basic samples — skeleton structure examples">
+
+| Class | Description |
+|---|---|
+| `BasicOpMode_Linear` | The simplest possible `LinearOpMode`. Shows `runOpMode()`, `waitForStart()`, and the main loop pattern. |
+| `BasicOpMode_Iterative` | The simplest possible iterative `OpMode`. Shows `init()`, `init_loop()`, `start()`, `loop()`, and `stop()`. |
+| `BasicOmniOpMode_Linear` | Four-motor mecanum/omni drive using `LinearOpMode`. Demonstrates three-axis holonomic control and power normalization. See [TeleOp Samples](/samples/robot-teleop) for a full breakdown. |
+
+</Accordion>
+
+<Accordion title="Robot (Autonomous) samples — differential drive navigation">
+
+| Class | Description |
+|---|---|
+| `RobotAutoDriveByTime_Linear` | Drives motors for fixed time durations using `ElapsedTime`. No sensors required. Best starting point for a first autonomous. |
+| `RobotAutoDriveByEncoder_Linear` | Uses motor encoders and `RUN_TO_POSITION` mode for repeatable distance control. Requires encoders wired to drive motors. |
+| `RobotAutoDriveByGyro_Linear` | Combines encoder distance with BNO055 IMU gyro heading correction for accurate straight-line driving. Uses a proportional controller. |
+| `RobotAutoDriveToLine_Linear` | Drives forward until a `NormalizedColorSensor` detects a white line on the field, then stops. Demonstrates sensor-triggered stopping. |
+
+See [Autonomous Samples](/samples/robot-autonomous) for a detailed walkthrough of all four.
+
+</Accordion>
+
+<Accordion title="Robot (TeleOp) samples — driver-controlled operation">
+
+| Class | Description |
+|---|---|
+| `RobotTeleopPOV_Linear` | POV (Point of View) drive: left stick Y = forward/back, right stick X = turn. Includes arm motor and servo claw control. |
+| `RobotTeleopTank_Iterative` | Tank drive: left stick controls left motors, right stick controls right motors. Demonstrates the iterative OpMode callback model. |
+| `RobotHardware` | Not a runnable OpMode — a reusable hardware abstraction class referenced by `ConceptExternalHardwareClass`. Copy both files together. |
+
+See [TeleOp Samples](/samples/robot-teleop) for a detailed walkthrough.
+
+</Accordion>
+
+<Accordion title="Concept samples — specific techniques and features">
+
+| Class | Description |
+|---|---|
+| `ConceptExternalHardwareClass` | Shows how to move hardware initialization into a separate class (`RobotHardware.java`) shared by multiple OpModes. Must be copied alongside `RobotHardware`. |
+| `ConceptMotorBulkRead` | Demonstrates reading all encoder values in a single bulk I²C transaction for higher loop rates. |
+| `ConceptTelemetry` | Shows advanced telemetry formatting including captions, values, lines, and retained data. |
+| `ConceptGamepadRumble` | Uses the gamepad rumble motor for driver feedback — timed pulses and pattern sequences. |
+| `ConceptGamepadTouchpad` | Reads the touchpad finger position on Logitech F310 / Xbox-style gamepads. |
+| `ConceptScanServo` | Sweeps a servo back and forth across its full range — useful for finding servo limits. |
+| `ConceptRampMotorSpeed` | Gradually accelerates and decelerates a motor to reduce mechanical shock. |
+| `ConceptRevSPARKMini` | Controls a REV SPARK Mini motor controller (brushed DC motor via PWM servo port). |
+
+</Accordion>
+
+<Accordion title="Sensor samples — reading specific hardware">
+
+| Class | Description |
+|---|---|
+| `SensorIMUOrthogonal` | Reads heading, pitch, and roll from the REV Hub built-in IMU using the SDK 8.0+ universal IMU interface. Hub mounted orthogonally (flat). |
+| `SensorIMUNonOrthogonal` | Same as above but with the hub mounted at an angle — shows how to remap axes. |
+| `SensorColor` | Reads RGBA and HSV values from a REV Color Sensor V2/V3. Also shows gain adjustment. |
+| `SensorREV2mDistance` | Reads distance in mm from a REV 2m Time-of-Flight Distance Sensor. |
+| `SensorBNO055IMU` | Legacy BNO055 IMU sample using the older `BNO055IMU` class (pre-SDK 8.0 hubs). |
+| `SensorBNO055IMUCalibration` | Step-by-step calibration routine for the BNO055, saving calibration data to a file. |
+
+</Accordion>
+
+<Accordion title="Vision samples — TensorFlow and Vuforia">
+
+| Class | Description |
+|---|---|
+| `ConceptTensorFlowObjectDetection` | Uses TFOD (TensorFlow Object Detection) with the built-in RC phone camera to detect game elements. |
+| `ConceptTensorFlowObjectDetectionWebcam` | Same as above, but using a USB webcam instead of the phone camera. |
+| `ConceptVuforiaFieldNavigation` | Field navigation using Vuforia target images and the phone camera for absolute field position. |
+| `ConceptVuforiaFieldNavigationWebcam` | Same as above using a USB webcam. |
+| `ConceptVuforiaDriveToTargetWebcam` | Drives autonomously toward a Vuforia target using webcam-based pose estimation. |
+
+</Accordion>
+
+---
+
+## How to copy a sample to TeamCode
+
+<Steps>
+  <Step title="Locate the sample in Android Studio">
+    In the **Project** panel, expand `FtcRobotController → src → main → java → org.firstinspires.ftc.robotcontroller.external.samples`. Find the class you want to use.
+  </Step>
+  <Step title="Copy the class">
+    Right-click the class file → **Copy** (or press `Ctrl+C` / `Cmd+C`).
+  </Step>
+  <Step title="Navigate to TeamCode">
+    Expand `TeamCode → src → main → java → org.firstinspires.ftc.teamcode`.
+  </Step>
+  <Step title="Paste and rename">
+    Right-click the `teamcode` package → **Paste**. Android Studio will prompt you for a new class name. Enter a descriptive name for your OpMode (e.g., `MyAutoEncoder`). Android Studio automatically updates the class declaration, constructor name, and package statement.
+  </Step>
+  <Step title="Remove @Disabled">
+    Open the newly created file. Find the `@Disabled` annotation and delete it (or comment it out with `//`). Save the file.
+  </Step>
+  <Step title="Build and deploy">
+    Click **Build → Make Project** to verify there are no compile errors, then deploy to the Robot Controller and check that your OpMode appears in the Driver Station list.
+  </Step>
+</Steps>

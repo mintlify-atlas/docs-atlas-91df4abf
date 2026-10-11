@@ -1,20 +1,67 @@
 ---
-title: "Introduction"
-description: "Welcome to your project"
+title: "FTC Robot Controller: Program Your Competition Robot"
+sidebarTitle: "Home"
+description: "The official Android SDK for FIRST Tech Challenge. Write Java OpModes to control motors, servos, sensors, and computer vision on your competition robot."
 ---
 
-Write a short description of your product here. What it does, who it's for, and what they can accomplish with it.
+The FTC Robot Controller SDK is the Android application framework used by FIRST Tech Challenge teams worldwide to program their competition robots. It provides a clean Java API for controlling hardware — motors, servos, sensors, and cameras — through structured OpModes that map directly to the autonomous and driver-controlled periods of every FTC match.
 
-<Tip>
-  Ready to make this your own? Start by editing this page. Update your `docs.json` file to customize your site. Then fill out the [Quickstart](/quickstart) page.
-</Tip>
+<CardGroup cols={2}>
+  <Card title="Introduction" icon="flag" href="/introduction">
+    Learn what the FTC SDK is, how it fits into the FTC control system, and which programming path is right for your team.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Clone the repo, set up Android Studio, and deploy your first OpMode to a Robot Controller in minutes.
+  </Card>
+  <Card title="Writing OpModes" icon="code" href="/opmodes/overview">
+    Understand the Linear and Iterative OpMode models and how to structure TeleOp and Autonomous programs.
+  </Card>
+  <Card title="Hardware API" icon="microchip" href="/hardware/hardware-map">
+    Access motors, servos, sensors, and IMUs through the HardwareMap abstraction layer.
+  </Card>
+  <Card title="Advanced Concepts" icon="lightbulb" href="/concepts/hardware-class">
+    Explore hardware abstraction classes, computer vision with TensorFlow and Vuforia, telemetry, and bulk reads.
+  </Card>
+  <Card title="Sample Reference" icon="book-open" href="/samples/overview">
+    Browse the full library of sample OpModes — from basic drive code to autonomous navigation and vision.
+  </Card>
+</CardGroup>
 
-<Card title="Quickstart" icon="rocket" href="/quickstart">
-  This card links to the quickstart page in your project.
-</Card>
-<Card title="Components" icon="puzzle-piece" href="https://mintlify.com/docs/components">
-  Add cards, callouts, steps, tabs, and more to design and structure your pages.
-</Card>
-<Card title="Settings" icon="gear" href="https://mintlify.com/docs/organize/settings">
-  Set your site name, branding, and navigation in the `docs.json` file.
-</Card>
+## How the SDK Works
+
+Every FTC robot runs a **Robot Controller** app on a REV Control Hub or Android phone. Your team writes OpModes — Java classes that extend either `LinearOpMode` or `OpMode` — and deploys them to that app. During a match, the Driver Station selects and runs your OpMode over Wi-Fi Direct.
+
+<Steps>
+  <Step title="Clone or download the project">
+    Get the FtcRobotController repository and open it in Android Studio. Your team code goes in the `TeamCode` module.
+  </Step>
+  <Step title="Write your OpMode">
+    Extend `LinearOpMode` or `OpMode`, annotate with `@TeleOp` or `@Autonomous`, and use `hardwareMap` to get references to your robot's devices.
+  </Step>
+  <Step title="Build and deploy">
+    Connect to your Robot Controller via USB or Wi-Fi and run the Android Studio deploy target. The app installs automatically.
+  </Step>
+  <Step title="Select and run">
+    On the Driver Station app, select your OpMode from the list and press Init, then Start. Your robot comes to life.
+  </Step>
+</Steps>
+
+## Programming Paths
+
+The FTC SDK supports three distinct programming environments depending on your team's experience level:
+
+<CardGroup cols={3}>
+  <Card title="Blocks" icon="puzzle-piece" href="https://ftc-docs.firstinspires.org/programming_resources/blocks/Blocks-Tutorial.html">
+    Visual drag-and-drop programming in a browser. No software installation required. Great for beginners.
+  </Card>
+  <Card title="OnBot Java" icon="browser" href="https://ftc-docs.firstinspires.org/programming_resources/onbot_java/OnBot-Java-Tutorial.html">
+    Write Java directly in a browser-based IDE hosted on the Robot Controller. No Android Studio needed.
+  </Card>
+  <Card title="Android Studio" icon="laptop-code" href="/quickstart">
+    Full IDE experience with the complete FtcRobotController project. Required for advanced features and this SDK guide.
+  </Card>
+</CardGroup>
+
+<Note>
+  This documentation covers the **Android Studio** path using the FtcRobotController GitHub repository (SDK v8.1.1, POWERPLAY 2022–2023 season). For Blocks and OnBot Java tutorials, visit [ftc-docs.firstinspires.org](https://ftc-docs.firstinspires.org).
+</Note>

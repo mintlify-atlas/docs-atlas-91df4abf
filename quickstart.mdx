@@ -1,47 +1,193 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get started with FTC Robot Controller in Android Studio"
+sidebarTitle: "Quickstart"
+description: "Clone the FtcRobotController repo, configure Android Studio, write your first OpMode in TeamCode, and deploy it to your Robot Controller hardware."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
+This guide walks you through getting the FTC Robot Controller SDK onto your computer, opening it in Android Studio, writing a working OpMode, and deploying it to your robot's hardware. By the end you will have a TeleOp program running on a real Robot Controller that lets you drive a two-motor robot with a gamepad. If you haven't read the [Introduction](introduction) yet, start there to understand how the SDK is structured before diving in.
 
 ## Prerequisites
 
-Before you begin, you must have:
+Before you begin, make sure you have the following:
 
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
+- **Android Studio Chipmunk 2021.2.1** or later ([download from developer.android.com](https://developer.android.com/studio))
+- **Java Development Kit (JDK) 8** or later — bundled with Android Studio
+- **Robot Controller hardware**: a REV Control Hub, or an approved Android phone running the FTC Robot Controller app
+- **USB cable** to connect the Robot Controller to your development computer for deployment
+- **Internet connection** for the first build (Gradle downloads dependencies automatically)
 
-## Get started
+---
+
+## Steps
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+
+  <Step title="Clone or download the repository">
+    Open a terminal and clone the official FTC repository:
 
     ```bash
-    npm install your-package
+    git clone https://github.com/FIRST-Tech-Challenge/FtcRobotController.git
     ```
-  </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
 
-    ```bash
-    your-cli init
-    ```
-  </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+    If you prefer not to use Git, go to the [Releases page](https://github.com/FIRST-Tech-Challenge/FtcRobotController/releases) and download the source as a `.zip` or `.tar.gz` archive, then extract it to a folder on your computer.
 
-    ```bash
-    your-cli start
-    ```
+    <Tip>
+      The Releases page also hosts prebuilt APKs for both the Robot Controller and Driver Station apps. If you only need to install the app on a phone (without writing any custom code), you can sideload the APK directly without building from source.
+    </Tip>
   </Step>
+
+  <Step title="Open the project in Android Studio">
+    1. Launch Android Studio.
+    2. On the Welcome screen, click **Open** (or go to **File → Open** if a project is already open).
+    3. Navigate to the folder you cloned or extracted in the previous step and select it.
+    4. When prompted how to open the project, choose **Import project (Eclipse ADT, Gradle, etc.)**.
+
+    Android Studio will recognize the Gradle project structure and load both the `FtcRobotController` and `TeamCode` modules automatically.
+  </Step>
+
+  <Step title="Wait for Gradle sync to complete">
+    When the project first opens, Android Studio triggers a Gradle sync. This downloads all SDK library dependencies declared in `build.dependencies.gradle`:
+
+    ```groovy
+    dependencies {
+        implementation 'org.firstinspires.ftc:Inspection:8.1.1'
+        implementation 'org.firstinspires.ftc:Blocks:8.1.1'
+        implementation 'org.firstinspires.ftc:Tfod:8.1.1'
+        implementation 'org.firstinspires.ftc:RobotCore:8.1.1'
+        implementation 'org.firstinspires.ftc:RobotServer:8.1.1'
+        implementation 'org.firstinspires.ftc:OnBotJava:8.1.1'
+        implementation 'org.firstinspires.ftc:Hardware:8.1.1'
+        implementation 'org.firstinspires.ftc:FtcCommon:8.1.1'
+        implementation 'org.firstinspires.ftc:gameAssets-PowerPlay:1.0.0'
+        // ...
+    }
+    ```
+
+    The sync status bar is at the bottom of the IDE. Wait until it finishes before proceeding. Subsequent syncs are much faster because the libraries are cached locally.
+
+    <Warning>
+      Your computer must be connected to the internet during this first sync. Gradle fetches all packages from Maven Central and Google's Maven repository. If you are behind a corporate firewall or proxy, configure your proxy settings in **File → Settings → Appearance & Behavior → System Settings → HTTP Proxy** before syncing.
+    </Warning>
+  </Step>
+
+  <Step title="Navigate to the TeamCode source folder">
+    In the **Project** panel on the left side of Android Studio, switch the view dropdown from **Android** to **Project** if needed, then expand:
+
+    ```
+    TeamCode → src → main → java → org.firstinspires.ftc.teamcode
+    ```
+
+    This is your team's workspace. Any `.java` file you create here and annotate with `@TeleOp` or `@Autonomous` will appear on the Driver Station's OpMode list after you deploy the app.
+  </Step>
+
+  <Step title="Copy a sample OpMode into TeamCode">
+    The SDK ships a large collection of sample OpModes inside the `FtcRobotController` module. You should never edit samples directly; instead, copy them into `TeamCode`.
+
+    In the **Project** panel, expand:
+
+    ```
+    FtcRobotController → src → main → java →
+      org.firstinspires.ftc.robotcontroller → external → samples
+    ```
+
+    Right-click **`BasicOpMode_Linear.java`** and choose **Copy**. Then right-click on your `org.firstinspires.ftc.teamcode` package folder and choose **Paste**. Android Studio will prompt you for a new class name — choose something meaningful like `MyFirstTeleOp`.
+  </Step>
+
+  <Step title="Remove @Disabled and rename the OpMode">
+    Open your newly pasted file. You will see these two annotations near the top of the class:
+
+    ```java
+    @TeleOp(name="Basic: Linear OpMode", group="Linear Opmode")
+    @Disabled
+    public class MyFirstTeleOp extends LinearOpMode {
+    ```
+
+    Make two changes:
+
+    1. **Delete** the `@Disabled` line entirely. This annotation hides OpModes from the Driver Station list — it exists on all samples to prevent them from cluttering your OpMode menu by accident.
+    2. **Update the `name`** in `@TeleOp` to something descriptive for your team:
+
+    ```java
+    @TeleOp(name="My First TeleOp", group="Linear Opmode")
+    public class MyFirstTeleOp extends LinearOpMode {
+    ```
+
+    Your complete minimal OpMode will look like this:
+
+    ```java
+    package org.firstinspires.ftc.teamcode;
+
+    import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
+    import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+    import com.qualcomm.robotcore.hardware.DcMotor;
+    import com.qualcomm.robotcore.util.ElapsedTime;
+    import com.qualcomm.robotcore.util.Range;
+
+    @TeleOp(name="My First TeleOp", group="Linear Opmode")
+    public class MyFirstTeleOp extends LinearOpMode {
+
+        private ElapsedTime runtime = new ElapsedTime();
+        private DcMotor leftDrive  = null;
+        private DcMotor rightDrive = null;
+
+        @Override
+        public void runOpMode() {
+            telemetry.addData("Status", "Initialized");
+            telemetry.update();
+
+            // Retrieve motors from the hardware map.
+            // The strings must match the names in your robot configuration file.
+            leftDrive  = hardwareMap.get(DcMotor.class, "left_drive");
+            rightDrive = hardwareMap.get(DcMotor.class, "right_drive");
+
+            // Reverse one motor so both drive the robot forward
+            leftDrive.setDirection(DcMotor.Direction.REVERSE);
+            rightDrive.setDirection(DcMotor.Direction.FORWARD);
+
+            // Wait here until the driver presses PLAY on the Driver Station
+            waitForStart();
+            runtime.reset();
+
+            // Loop until the driver presses STOP
+            while (opModeIsActive()) {
+                // POV mode: left stick = forward/back, right stick = turn
+                double drive =  -gamepad1.left_stick_y;
+                double turn  =   gamepad1.right_stick_x;
+                double leftPower  = Range.clip(drive + turn, -1.0, 1.0);
+                double rightPower = Range.clip(drive - turn, -1.0, 1.0);
+
+                leftDrive.setPower(leftPower);
+                rightDrive.setPower(rightPower);
+
+                telemetry.addData("Status",  "Run Time: " + runtime.toString());
+                telemetry.addData("Motors",  "left (%.2f), right (%.2f)", leftPower, rightPower);
+                telemetry.update();
+            }
+        }
+    }
+    ```
+
+    <Note>
+      The device names `"left_drive"` and `"right_drive"` must exactly match the names you assigned to your motors in the **Configure Robot** screen of the Robot Controller app. If there is a mismatch, `hardwareMap.get()` will throw a runtime exception when the OpMode initializes.
+    </Note>
+  </Step>
+
+  <Step title="Connect your Robot Controller and deploy">
+    1. Connect your Robot Controller (REV Control Hub or Android phone) to your computer via USB.
+    2. In Android Studio, open the **run configuration** dropdown in the toolbar (it may say `FtcRobotController` by default). Select **TeamCode** from the list.
+    3. Click the green **Run ▶** button (or press `Shift + F10`).
+    4. Android Studio will build the project, install the APK on the connected device, and launch the Robot Controller app.
+    5. On the Driver Station, tap the OpMode dropdown. Your `"My First TeleOp"` should appear in the list. Select it, press **Init**, then press **Start** to run it.
+  </Step>
+
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+---
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
-</Tip>
+## What's next?
+
+Now that your first OpMode is running, explore the rest of this documentation to go deeper:
+
+- [Project Structure](project-structure) — understand every file and folder in the project
+- [OpModes Overview](opmodes/overview) — learn the difference between `LinearOpMode` and iterative `OpMode`
+- [Hardware Map](hardware/hardware-map) — how to retrieve and use motors, servos, and sensors in code

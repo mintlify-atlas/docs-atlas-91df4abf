@@ -1,0 +1,241 @@
+---
+title: "Iterative OpMode: event-driven robot programs"
+sidebarTitle: "Iterative OpMode"
+description: "OpMode (iterative) provides discrete lifecycle callbacks — init(), loop(), start(), stop() — running on a dedicated thread for predictable cycle times."
+---
+
+The iterative `OpMode` class offers a callback-driven programming model where the SDK calls your methods at the right time — you never write a `while` loop yourself. Instead of one long sequential method, your program is organized into short, focused lifecycle methods that the framework invokes at each stage of the match. This makes the structure of your program explicit and encourages clean, state-machine-style designs.
+
+## The callback model
+
+When you extend `OpMode`, the SDK manages the timing. You provide the *what*, the SDK handles the *when*:
+
+```java
+@TeleOp(name = "My Iterative TeleOp", group = "Competition")
+public class MyIterativeTeleOp extends OpMode {
+
+    @Override public void init()      { /* called once on INIT    */ }
+    @Override public void init_loop() { /* called repeatedly pre-START */ }
+    @Override public void start()     { /* called once on START   */ }
+    @Override public void loop()      { /* called repeatedly while running */ }
+    @Override public void stop()      { /* called once on STOP    */ }
+}
+```
+
+Only `init()` and `loop()` are abstract — you must override them. The other three (`init_loop()`, `start()`, `stop()`) have empty default implementations and can be overridden as needed.
+
+## Lifecycle methods
+
+### `init()`
+
+Called **once** when the driver presses **INIT** on the Driver Station. This is where you initialize hardware: retrieve devices from `hardwareMap`, set motor directions, configure sensors, and post an initial telemetry message. The robot must not move during this phase.
+
+```java
+@Override
+public void init() {
+    leftDrive  = hardwareMap.get(DcMotor.class, "left_drive");
+    rightDrive = hardwareMap.get(DcMotor.class, "right_drive");
+
+    leftDrive.setDirection(DcMotor.Direction.REVERSE);
+    rightDrive.setDirection(DcMotor.Direction.FORWARD);
+
+    telemetry.addData("Status", "Initialized");
+}
+```
+
+### `init_loop()`
+
+Called **repeatedly** after `init()` returns, until the driver presses **START**. Use it to display live sensor data, poll calibration status, or run any background task that needs to repeat during the pre-match waiting period.
+
+```java
+@Override
+public void init_loop() {
+    // Example: display battery voltage while waiting
+    telemetry.addData("Battery", "%.1f V", getBatteryVoltage());
+}
+```
+
+### `start()`
+
+Called **once** when the driver presses **START (▶)**. This is a good place to reset timers or record a starting position, since you know the match is officially underway.
+
+```java
+@Override
+public void start() {
+    runtime.reset();  // start the match clock
+}
+```
+
+### `loop()`
+
+Called **repeatedly** while the OpMode is running (between START and STOP). This is the heart of your iterative OpMode — read gamepad inputs, compute motor powers, update actuators, and push telemetry. Keep this method fast; avoid blocking calls like `sleep()` or long-running computations.
+
+Since **SDK 8.1**, `loop()` runs on a dedicated thread. This means a slow `loop()` implementation no longer blocks the SDK's internal network-command processing, improving overall system responsiveness.
+
+```java
+@Override
+public void loop() {
+    double drive = -gamepad1.left_stick_y;
+    double turn  =  gamepad1.right_stick_x;
+
+    double leftPower  = Range.clip(drive + turn, -1.0, 1.0);
+    double rightPower = Range.clip(drive - turn, -1.0, 1.0);
+
+    leftDrive.setPower(leftPower);
+    rightDrive.setPower(rightPower);
+
+    telemetry.addData("Motors", "left (%.2f), right (%.2f)", leftPower, rightPower);
+}
+```
+
+### `stop()`
+
+Called **once** when the driver presses **STOP (■)**, or when the match timer ends. The SDK enforces a **1-second time limit** on `stop()` — if it hasn't returned within one second, the SDK forcibly terminates the OpMode. Keep this method short: release resources, log a final message, or set motors to zero.
+
+```java
+@Override
+public void stop() {
+    telemetry.addData("Status", "Stopped");
+}
+```
+
+<Note>
+  As of **SDK 8.1**, the `msStuckDetectInit`, `msStuckDetectInitLoop`, `msStuckDetectStart`, and `msStuckDetectLoop` fields are **deprecated**. These fields previously imposed time limits on the init and loop callbacks, but with the dedicated-thread architecture introduced in 8.1, those limits are no longer enforced for `init()` and `loop()`. Only `stop()` retains a hard time limit (1 second). Remove any references to the deprecated fields from your code.
+</Note>
+
+## Complete example: BasicOpMode\_Iterative
+
+The following is the full `BasicOpMode_Iterative` sample from the SDK. It drives a two-wheel robot with the same POV/Tank drive options as the linear sample, but organized entirely through callbacks.
+
+```java
+@TeleOp(name="Basic: Iterative OpMode", group="Iterative Opmode")
+@Disabled
+public class BasicOpMode_Iterative extends OpMode {
+
+    // Declare OpMode members.
+    private ElapsedTime runtime = new ElapsedTime();
+    private DcMotor leftDrive  = null;
+    private DcMotor rightDrive = null;
+
+    /*
+     * Code to run ONCE when the driver hits INIT
+     */
+    @Override
+    public void init() {
+        telemetry.addData("Status", "Initialized");
+
+        leftDrive  = hardwareMap.get(DcMotor.class, "left_drive");
+        rightDrive = hardwareMap.get(DcMotor.class, "right_drive");
+
+        leftDrive.setDirection(DcMotor.Direction.REVERSE);
+        rightDrive.setDirection(DcMotor.Direction.FORWARD);
+
+        telemetry.addData("Status", "Initialized");
+    }
+
+    /*
+     * Code to run REPEATEDLY after the driver hits INIT, but before they hit PLAY
+     */
+    @Override
+    public void init_loop() {
+    }
+
+    /*
+     * Code to run ONCE when the driver hits PLAY
+     */
+    @Override
+    public void start() {
+        runtime.reset();
+    }
+
+    /*
+     * Code to run REPEATEDLY after the driver hits PLAY but before they hit STOP
+     */
+    @Override
+    public void loop() {
+        double leftPower;
+        double rightPower;
+
+        // POV Mode uses left stick to go forward, and right stick to turn.
+        double drive = -gamepad1.left_stick_y;
+        double turn  =  gamepad1.right_stick_x;
+        leftPower    = Range.clip(drive + turn, -1.0, 1.0);
+        rightPower   = Range.clip(drive - turn, -1.0, 1.0);
+
+        // Tank Mode (uncomment to use instead):
+        // leftPower  = -gamepad1.left_stick_y;
+        // rightPower = -gamepad1.right_stick_y;
+
+        leftDrive.setPower(leftPower);
+        rightDrive.setPower(rightPower);
+
+        telemetry.addData("Status", "Run Time: " + runtime.toString());
+        telemetry.addData("Motors", "left (%.2f), right (%.2f)", leftPower, rightPower);
+    }
+
+    /*
+     * Code to run ONCE after the driver hits STOP
+     */
+    @Override
+    public void stop() {
+    }
+}
+```
+
+## SDK 8.1 dedicated-thread benefit
+
+Before SDK 8.1, all OpMode callbacks ran on the same thread as the SDK's network command handler. A slow or blocked `loop()` method would delay the Robot Controller's ability to respond to Driver Station pings, sometimes causing brief disconnects on congested Wi-Fi networks.
+
+Starting in SDK 8.1, `init()`, `init_loop()`, `start()`, `loop()`, and `stop()` execute on a **dedicated OpMode thread**. Network processing continues independently, so your robot stays connected even if a particular `loop()` iteration takes slightly longer than expected.
+
+## Linear vs iterative: when to choose each
+
+<Tabs>
+  <Tab title="Linear OpMode structure">
+    Everything inside one method. Blocking calls pause execution naturally. Easy to read as a story.
+
+    ```java
+    @Override
+    public void runOpMode() {
+        // Init phase
+        leftDrive = hardwareMap.get(DcMotor.class, "left_drive");
+
+        waitForStart();   // ← clear boundary
+
+        // Run phase
+        while (opModeIsActive()) {
+            double drive = -gamepad1.left_stick_y;
+            double turn  =  gamepad1.right_stick_x;
+            leftDrive.setPower(Range.clip(drive + turn, -1.0, 1.0));
+            rightDrive.setPower(Range.clip(drive - turn, -1.0, 1.0));
+            telemetry.update();
+        }
+    }
+    ```
+
+    **Best for:** Autonomous routines, beginners, any program with a clear sequential flow.
+  </Tab>
+  <Tab title="Iterative OpMode structure">
+    Logic split across named callbacks. No blocking. The framework handles timing.
+
+    ```java
+    @Override
+    public void init() {
+        leftDrive = hardwareMap.get(DcMotor.class, "left_drive");
+    }
+
+    @Override
+    public void loop() {
+        double drive = -gamepad1.left_stick_y;
+        double turn  =  gamepad1.right_stick_x;
+        leftDrive.setPower(Range.clip(drive + turn, -1.0, 1.0));
+        rightDrive.setPower(Range.clip(drive - turn, -1.0, 1.0));
+        telemetry.update();
+    }
+    ```
+
+    **Best for:** TeleOp programs where state machines model driver modes; teams that prefer explicit lifecycle separation.
+  </Tab>
+</Tabs>
+
+Both styles produce identical robot behavior for simple programs. The difference is organizational: `LinearOpMode` reads more like a script; iterative `OpMode` reads more like a component. Neither is objectively better — choose the one your team finds easier to maintain.

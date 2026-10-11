@@ -1,0 +1,305 @@
+---
+title: "TeleOp drive samples: POV, tank, and mecanum drive modes"
+sidebarTitle: "TeleOp Samples"
+description: "Three TeleOp drive samples cover POV (single-stick), tank (dual-stick), and mecanum (holonomic) drive modes for driver-controlled robot operation."
+---
+
+The SDK provides three TeleOp drive samples representing the most common driver control schemes used in FTC competition. `RobotTeleopPOV_Linear` and `RobotTeleopTank_Iterative` both target a simple two-motor differential (skid-steer) drive base, while `BasicOmniOpMode_Linear` targets a four-motor mecanum or X-drive holonomic robot. Choosing between them comes down to your robot's drivetrain hardware, your drive team's preference, and which OpMode base class you want to learn.
+
+<Note>
+  All three samples include the `@Disabled` annotation. Remove it after copying to your TeamCode package so the OpMode appears on the Driver Station. See the [Sample Overview](/samples/overview) for copy instructions.
+</Note>
+
+---
+
+## RobotTeleopPOV\_Linear
+
+**POV (Point of View) drive using a single pair of joysticks.** In this mode the driver uses the **left stick Y-axis** to drive forward and backward, and the **right stick X-axis** to turn. This closely mimics how first-person video games feel — hence "Point of View" — making it the most natural style for drivers who are new to FTC.
+
+This sample is a `LinearOpMode`. All control logic lives inside a single `while (opModeIsActive())` loop that runs for the entire TeleOp period.
+
+### Hardware configuration
+
+```java
+public DcMotor leftDrive  = null;
+public DcMotor rightDrive = null;
+public DcMotor leftArm    = null;
+public Servo   leftClaw   = null;
+public Servo   rightClaw  = null;
+
+public static final double MID_SERVO       =  0.5;
+public static final double CLAW_SPEED      =  0.02;  // servo position delta per loop
+public static final double ARM_UP_POWER    =  0.45;
+public static final double ARM_DOWN_POWER  = -0.45;
+```
+
+The sample controls three subsystems in one loop: the drivetrain, an arm motor (`left_arm`), and a pair of servo claws (`left_hand` / `right_hand`).
+
+### The POV drive math
+
+```java
+// Read joystick axes (left_stick_y is negative when pushed forward — negate it)
+drive = -gamepad1.left_stick_y;
+turn  =  gamepad1.right_stick_x;
+
+// Blend drive and turn into per-side motor powers
+left  = drive + turn;
+right = drive - turn;
+
+// Normalize: if either value exceeds ±1.0, scale both down proportionally
+max = Math.max(Math.abs(left), Math.abs(right));
+if (max > 1.0) {
+    left  /= max;
+    right /= max;
+}
+
+leftDrive.setPower(left);
+rightDrive.setPower(right);
+```
+
+The key insight: adding the turn value to the left side and subtracting it from the right side steers the robot. When `drive = 0` and `turn = 1.0`, the left motor goes full forward and the right motor goes full reverse — a point turn. When `drive = 0.8` and `turn = 0.3`, the left motor gets `1.1` and the right motor gets `0.5`. Without normalization, the left motor would be clipped to `1.0` and the robot would actually turn faster than you intended. Normalization preserves the *ratio* between the two sides so the drive feels consistent across the full joystick range.
+
+### Arm and claw control
+
+```java
+// Claw: right bumper opens, left bumper closes (small increment each loop)
+if (gamepad1.right_bumper)
+    clawOffset += CLAW_SPEED;
+else if (gamepad1.left_bumper)
+    clawOffset -= CLAW_SPEED;
+
+// Clamp the offset so the servos can't exceed their physical range
+clawOffset = Range.clip(clawOffset, -0.5, 0.5);
+leftClaw.setPosition(MID_SERVO + clawOffset);
+rightClaw.setPosition(MID_SERVO - clawOffset);  // Mirror image
+
+// Arm: Y button raises, A button lowers, neither = stop
+if (gamepad1.y)
+    leftArm.setPower(ARM_UP_POWER);
+else if (gamepad1.a)
+    leftArm.setPower(ARM_DOWN_POWER);
+else
+    leftArm.setPower(0.0);
+```
+
+The servo claws are assumed to be **mirror images** of each other mounted symmetrically on either side of the claw mechanism. Adding `clawOffset` to one and subtracting from the other opens or closes both sides in sync. The `CLAW_SPEED = 0.02` value means the claw moves `0.02` servo position units (~1.8°) per loop iteration, giving the driver smooth incremental control rather than instant snapping.
+
+A `sleep(50)` at the bottom of the loop throttles it to roughly 20 Hz, preventing the claw servo from moving too fast.
+
+---
+
+## RobotTeleopTank\_Iterative
+
+**Tank drive using independent joysticks per side.** In this mode the **left stick Y-axis** controls the left drive motor and the **right stick Y-axis** controls the right drive motor. Each stick operates one side of the robot independently, just like the treads on a real tank. Driving straight requires keeping both sticks at the same level, which takes more practice — but many experienced drivers prefer it for its directness and precision.
+
+This sample extends `OpMode` (the **iterative** base class), which demonstrates a fundamentally different programming model than `LinearOpMode`.
+
+### The iterative OpMode model
+
+Instead of one sequential `runOpMode()` method, the iterative model splits your code across callback methods the SDK calls at the appropriate time:
+
+```java
+@Override
+public void init() {
+    // Called ONCE when the driver presses INIT on the Driver Station.
+    // Initialize all hardware here.
+    leftDrive  = hardwareMap.get(DcMotor.class, "left_drive");
+    rightDrive = hardwareMap.get(DcMotor.class, "right_drive");
+    leftArm    = hardwareMap.get(DcMotor.class, "left_arm");
+    leftClaw   = hardwareMap.get(Servo.class,   "left_hand");
+    rightClaw  = hardwareMap.get(Servo.class,   "right_hand");
+    leftClaw.setPosition(MID_SERVO);
+    rightClaw.setPosition(MID_SERVO);
+}
+
+@Override
+public void init_loop() {
+    // Called REPEATEDLY between INIT and PLAY. Use for pre-match telemetry.
+}
+
+@Override
+public void start() {
+    // Called ONCE when the driver presses PLAY.
+}
+
+@Override
+public void loop() {
+    // Called REPEATEDLY while the OpMode is running (after PLAY, before STOP).
+    // This is your main control loop — treat it like loop() in Arduino.
+    double left  = -gamepad1.left_stick_y;   // Negate: stick forward = positive power
+    double right = -gamepad1.right_stick_y;
+
+    leftDrive.setPower(left);
+    rightDrive.setPower(right);
+    // ... claw and arm control identical to POV sample ...
+}
+
+@Override
+public void stop() {
+    // Called ONCE when the driver presses STOP.
+}
+```
+
+Notice that tank mode doesn't need the normalization math that POV mode requires — each stick directly commands its own side, so values are already within ±1.0.
+
+### Tank vs POV: which should you use?
+
+Both modes produce identical robot behavior — the difference is entirely in driver feel. Tank mode is harder to drive straight with because any joystick imbalance causes drift. POV mode makes straight driving easy (left stick forward goes forward) but requires drivers to train their instincts for turning. Most FTC drive coaches recommend starting new drivers on POV mode and switching to tank only if they prefer it after practice.
+
+The POV sample even includes a commented-out tank implementation you can swap in instantly:
+
+```java
+// Uncomment these lines and comment out the POV block to switch to Tank mode:
+// left  = -gamepad1.left_stick_y;
+// right = -gamepad1.right_stick_y;
+```
+
+---
+
+## BasicOmniOpMode\_Linear
+
+**Holonomic (mecanum / X-drive) control with three independent motion axes.** This sample drives a four-motor robot that uses mecanum wheels or an X-drive configuration. Unlike a differential drive that can only go forward/backward and turn, a holonomic drive can move in any direction — including sideways (strafing) — without rotating the robot. This unlocks far more flexible positioning during TeleOp.
+
+<Warning>
+  Getting the motor **directions** correct is the most critical step for mecanum drive. If any wheel spins the wrong way, the robot will move in unintended directions. The sample includes a built-in per-motor test routine (described below) specifically to help you verify this before your first real drive.
+</Warning>
+
+### Hardware configuration
+
+The sample uses four motors configured as:
+
+```java
+private DcMotor leftFrontDrive  = null;  // configured as "left_front_drive"
+private DcMotor leftBackDrive   = null;  // configured as "left_back_drive"
+private DcMotor rightFrontDrive = null;  // configured as "right_front_drive"
+private DcMotor rightBackDrive  = null;  // configured as "right_back_drive"
+```
+
+Motor directions for a **direct drive** mecanum robot (wheels turn the same direction as the motor shaft):
+
+```java
+leftFrontDrive.setDirection(DcMotor.Direction.REVERSE);
+leftBackDrive.setDirection(DcMotor.Direction.REVERSE);
+rightFrontDrive.setDirection(DcMotor.Direction.FORWARD);
+rightBackDrive.setDirection(DcMotor.Direction.FORWARD);
+```
+
+If your robot uses gear reductions or right-angle drive, these directions may differ. Always verify with the motor test routine first.
+
+### Three-axis joystick mapping
+
+Each of the three motion axes is read from a separate joystick input:
+
+```java
+// Left stick Y axis: axial motion (forward/backward)
+double axial   = -gamepad1.left_stick_y;  // Negate: stick forward = positive
+
+// Left stick X axis: lateral motion (strafe left/right)
+double lateral =  gamepad1.left_stick_x;
+
+// Right stick X axis: yaw rotation (turn CW/CCW)
+double yaw     =  gamepad1.right_stick_x;
+```
+
+### The mecanum power mixing matrix
+
+Each wheel's power is a combination of all three axes. This is the mecanum mixing matrix:
+
+```java
+double leftFrontPower  = axial + lateral + yaw;
+double rightFrontPower = axial - lateral - yaw;
+double leftBackPower   = axial - lateral + yaw;
+double rightBackPower  = axial + lateral - yaw;
+```
+
+This table shows the sign of each term per wheel and why it works:
+
+| Motion | LF | RF | LB | RB |
+|---|---|---|---|---|
+| Forward (axial +) | + | + | + | + | All wheels forward |
+| Strafe right (lateral +) | + | − | − | + | Diagonal wheel pairs oppose each other |
+| Turn CW (yaw +) | + | − | + | − | Left side forward, right side reverse |
+
+The lateral axis is where mecanum magic happens: the diagonal roller pattern on the wheels converts a combination of motor directions into sideways robot movement.
+
+### Power normalization
+
+After computing the four wheel powers, the sample normalizes them so no wheel exceeds ±1.0 while preserving the ratios:
+
+```java
+// Find the largest absolute value among the four wheel powers
+max = Math.max(Math.abs(leftFrontPower), Math.abs(rightFrontPower));
+max = Math.max(max, Math.abs(leftBackPower));
+max = Math.max(max, Math.abs(rightBackPower));
+
+// If any power exceeds 1.0, scale all four down proportionally
+if (max > 1.0) {
+    leftFrontPower  /= max;
+    rightFrontPower /= max;
+    leftBackPower   /= max;
+    rightBackPower  /= max;
+}
+
+leftFrontDrive.setPower(leftFrontPower);
+rightFrontDrive.setPower(rightFrontPower);
+leftBackDrive.setPower(leftBackPower);
+rightBackDrive.setPower(rightBackPower);
+```
+
+This is exactly the same normalization technique used in `RobotTeleopPOV_Linear`, generalized to four wheels. Without it, commanding full axial + full lateral simultaneously would overflow the ±1.0 motor power limit and distort the intended motion.
+
+### Built-in motor direction test
+
+The sample includes a commented-out test block that maps one gamepad button per motor. Uncomment it, push each button, and verify the correct wheel spins forward:
+
+```java
+/*
+leftFrontPower  = gamepad1.x ? 1.0 : 0.0;  // X button → left front
+leftBackPower   = gamepad1.a ? 1.0 : 0.0;  // A button → left back
+rightFrontPower = gamepad1.y ? 1.0 : 0.0;  // Y button → right front
+rightBackPower  = gamepad1.b ? 1.0 : 0.0;  // B button → right back
+*/
+```
+
+<Tip>
+  Always run this motor test before your first full mecanum drive test. Each button press should spin the labeled wheel **forward** (in the direction the robot would drive if all wheels were going the same way). If a wheel spins backward, flip its `setDirection()` call from `REVERSE` to `FORWARD` or vice versa. Re-comment the test block when all four wheels are verified.
+</Tip>
+
+---
+
+## Comparing the three drive modes
+
+<CardGroup cols={3}>
+  <Card title="POV Drive" icon="gamepad">
+    **Sample:** `RobotTeleopPOV_Linear`  
+    **Base class:** `LinearOpMode`  
+    **Motors:** 2 (differential)  
+    **Controls:** Left stick Y = forward/back, Right stick X = turn  
+    **Best for:** New drivers, intuitive feel, easy straight driving  
+    **Limitation:** Cannot strafe
+  </Card>
+  <Card title="Tank Drive" icon="tank">
+    **Sample:** `RobotTeleopTank_Iterative`  
+    **Base class:** `OpMode` (iterative)  
+    **Motors:** 2 (differential)  
+    **Controls:** Left stick Y = left side, Right stick Y = right side  
+    **Best for:** Experienced drivers, direct motor feedback  
+    **Limitation:** Requires practice to drive straight; cannot strafe
+  </Card>
+  <Card title="Mecanum Drive" icon="arrows-up-down-left-right">
+    **Sample:** `BasicOmniOpMode_Linear`  
+    **Base class:** `LinearOpMode`  
+    **Motors:** 4 (holonomic)  
+    **Controls:** Left stick = axial + lateral, Right stick X = yaw  
+    **Best for:** Maximum positioning flexibility, competitive advantage  
+    **Limitation:** Motor direction setup is critical; more complex hardware
+  </Card>
+</CardGroup>
+
+---
+
+## Next steps
+
+Once you have a working drive OpMode in TeamCode, consider studying `ConceptExternalHardwareClass` alongside its companion `RobotHardware.java`. That pair demonstrates how to move all hardware initialization into a shared class so both your TeleOp and Autonomous OpModes can reference the same motors, servos, and sensors without duplicating setup code. See the [Sample Overview](/samples/overview) for the full sample list.
+
+For motor and servo wiring and configuration details, see [Motors and Servos](/hardware/motors-servos). For IMU setup used in `RobotAutoDriveByGyro_Linear`, see the [IMU documentation](/hardware/imu).

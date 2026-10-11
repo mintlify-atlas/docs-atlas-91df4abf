@@ -1,0 +1,252 @@
+---
+title: "FtcRobotController project layout and module structure"
+sidebarTitle: "Project Structure"
+description: "Understand how the FTC Robot Controller Android Studio project is organized into modules, where to place team code, and how the build system works."
+---
+
+When you open the FtcRobotController repository in Android Studio, you are working with a multi-module Android Gradle project. Understanding how the project is laid out — and, crucially, which parts you should edit versus which parts you should leave alone — will save you a lot of confusion as your season progresses. This page walks through every important directory and file so you always know exactly where things live.
+
+## Directory Tree
+
+```
+FtcRobotController/                   ← project root
+│
+├── FtcRobotController/               ← core SDK module (read-only)
+│   ├── build.gradle
+│   └── src/main/
+│       ├── AndroidManifest.xml
+│       ├── java/org/firstinspires/ftc/robotcontroller/
+│       │   ├── internal/             ← SDK internals (Activity, event loop)
+│       │   └── external/
+│       │       └── samples/          ← 50+ reference OpModes
+│       └── res/                      ← SDK resources (layouts, drawables)
+│
+├── TeamCode/                         ← your team's module ✏️
+│   ├── build.gradle
+│   └── src/main/
+│       ├── AndroidManifest.xml
+│       ├── java/org/firstinspires/ftc/teamcode/
+│       │   └── (your OpModes go here)
+│       └── res/
+│           └── xml/
+│               └── teamwebcamcalibrations.xml
+│
+├── libs/                             ← local JAR / native libraries
+│   ├── Vuforia.jar
+│   ├── arm64-v8a/
+│   │   └── libVuforia.so
+│   └── armeabi-v7a/
+│       └── libVuforia.so
+│
+├── build.gradle                      ← root build script
+├── build.common.gradle               ← shared Android build config
+├── build.dependencies.gradle         ← SDK library dependency versions
+├── settings.gradle                   ← module declarations
+└── gradle.properties                 ← JVM and AndroidX flags
+```
+
+---
+
+## The `FtcRobotController` Module
+
+The `FtcRobotController` module is the **core SDK application** maintained by FIRST. It contains the Android `Activity` that starts when the Robot Controller app launches, the OpMode registration and lifecycle infrastructure, and all the bundled sample OpModes that ship with each season's SDK.
+
+**You should never modify files inside this module.** Each season, FIRST releases an updated SDK by replacing this module's contents. If you have edited files here, those changes will be overwritten when you update, and they may cause merge conflicts that are difficult to resolve.
+
+The module's most important subdirectory is:
+
+```
+FtcRobotController/src/main/java/org/firstinspires/ftc/robotcontroller/external/samples/
+```
+
+This folder contains over 50 reference OpModes that cover everything from basic motor control to TensorFlow object detection. Sample class names follow a structured naming convention:
+
+| Prefix | Meaning |
+|---|---|
+| `Basic` | Minimal skeleton showing the structure of an OpMode style |
+| `Sensor` | Demonstrates how to read a specific sensor |
+| `Robot` | A working drive base example using a simple two-motor differential drive |
+| `Concept` | Illustrates a specific programming concept or feature |
+
+For example, `BasicOpMode_Linear.java` is the simplest possible `LinearOpMode` skeleton, and `RobotTeleopPOV_Linear.java` is a complete POV-drive TeleOp.
+
+<Note>
+  Never edit sample files in-place inside the `FtcRobotController` module. Samples are read-only reference material. Always **copy** the file you want into your `TeamCode` package, then modify the copy. See the [Quickstart](quickstart) for step-by-step copy instructions.
+</Note>
+
+---
+
+## The `TeamCode` Module
+
+The `TeamCode` module is **your team's workspace**. It is intentionally nearly empty — just a package structure and a few configuration files — so you have a clean slate to build on.
+
+### Where to put your code
+
+All custom OpModes and hardware helper classes belong in:
+
+```
+TeamCode/src/main/java/org/firstinspires/ftc/teamcode/
+```
+
+Any `.java` file in this package that is annotated with `@TeleOp` or `@Autonomous` (and not `@Disabled`) will automatically appear on the Driver Station's OpMode selection list after you deploy the app.
+
+### `AndroidManifest.xml`
+
+`TeamCode` has its own `AndroidManifest.xml` at `TeamCode/src/main/AndroidManifest.xml`. This file declares the Java package for the module:
+
+```xml
+package="org.firstinspires.ftc.teamcode"
+```
+
+If you clone the TeamCode module for a multi-team setup (see [below](#cloning-teamcode-for-multi-team-clubs)), you will update this package name in the cloned manifest.
+
+### `teamwebcamcalibrations.xml`
+
+Located at `TeamCode/src/main/res/xml/teamwebcamcalibrations.xml`, this file is where you can add calibration data for USB webcams used with Vuforia. The FTC SDK uses calibration parameters (focal length, principal point) to correct lens distortion. The SDK ships with built-in calibrations for several common cameras; add entries here for any other webcam your team uses.
+
+---
+
+## The `samples/` Folder
+
+As described above, `FtcRobotController/src/main/java/.../external/samples/` is a **read-only reference library**. Think of it like the appendix of a textbook — you read it and copy from it, but you do not write in it.
+
+When you want to base your code on a sample:
+
+1. Find the sample in the `external/samples/` package in the Project panel.
+2. Right-click → **Copy**.
+3. Right-click your `org.firstinspires.ftc.teamcode` package → **Paste**.
+4. Give the copy a new class name.
+5. Delete the `@Disabled` annotation on the copy.
+6. Modify the copy to suit your robot.
+
+---
+
+## `build.dependencies.gradle`
+
+This file lives at the project root and specifies the exact versions of every FTC SDK library that the project depends on. All libraries are pulled from Maven Central at build time:
+
+```groovy
+dependencies {
+    implementation 'org.firstinspires.ftc:Inspection:8.1.1'
+    implementation 'org.firstinspires.ftc:Blocks:8.1.1'
+    implementation 'org.firstinspires.ftc:Tfod:8.1.1'
+    implementation 'org.firstinspires.ftc:RobotCore:8.1.1'
+    implementation 'org.firstinspires.ftc:RobotServer:8.1.1'
+    implementation 'org.firstinspires.ftc:OnBotJava:8.1.1'
+    implementation 'org.firstinspires.ftc:Hardware:8.1.1'
+    implementation 'org.firstinspires.ftc:FtcCommon:8.1.1'
+    implementation 'org.firstinspires.ftc:gameAssets-PowerPlay:1.0.0'
+    implementation 'org.tensorflow:tensorflow-lite-task-vision:0.2.0'
+    implementation 'androidx.appcompat:appcompat:1.2.0'
+}
+```
+
+When FIRST releases a new SDK version, these version strings are updated here. You generally do not need to edit this file yourself during a season.
+
+---
+
+## The `libs/` Folder
+
+The `libs/` directory at the project root contains local binary libraries that cannot be distributed through Maven:
+
+| File | Purpose |
+|---|---|
+| `Vuforia.jar` | Vuforia computer vision Java API |
+| `arm64-v8a/libVuforia.so` | Vuforia native library for 64-bit ARM devices (e.g., REV Control Hub, modern phones) |
+| `armeabi-v7a/libVuforia.so` | Vuforia native library for 32-bit ARM devices |
+
+These files are referenced through the `flatDir` repository declaration in `build.dependencies.gradle`:
+
+```groovy
+repositories {
+    flatDir {
+        dirs rootProject.file('libs')
+    }
+}
+```
+
+You should not modify or replace these files.
+
+---
+
+## `gradle.properties`
+
+This file configures the Gradle build environment for the entire project:
+
+```properties
+# Use AndroidX libraries
+android.useAndroidX=true
+
+# Automatically migrate third-party libraries to AndroidX
+android.enableJetifier=true
+
+# Allow Gradle to use up to 1 GB of RAM during builds
+org.gradle.jvmargs=-Xmx1024M
+```
+
+The `Xmx1024M` setting allocates 1 GB of RAM to the Gradle daemon. On computers with limited memory, builds may be slow or fail; you can increase this value if your machine has more RAM to spare.
+
+---
+
+## `settings.gradle`
+
+This file tells Gradle which modules make up the project. By default it contains:
+
+```groovy
+include ':FtcRobotController'
+include ':TeamCode'
+```
+
+If you add a cloned TeamCode module (see below), you add a line here.
+
+---
+
+## Cloning TeamCode for Multi-Team Clubs
+
+If your robotics club has multiple teams and you want each team to share the same repository while maintaining their own separate code, you can clone the `TeamCode` module — once per team. Each cloned module appears as a separate entry in Android Studio's module list, and each team selects their own module from the run configuration dropdown before deploying.
+
+<Steps>
+  <Step title="Close Android Studio">
+    These steps are performed using your operating system's file manager and text editor, not inside Android Studio. Close the IDE first.
+  </Step>
+  <Step title="Copy the TeamCode folder">
+    Using your OS file manager, copy the entire `TeamCode/` folder to a sibling directory with your team number, for example `Team0417/`.
+  </Step>
+  <Step title="Delete the .iml file">
+    Inside the new `Team0417/` folder, delete the `TeamCode.iml` file. Android Studio will regenerate it.
+  </Step>
+  <Step title="Rename the Java package folder">
+    Inside `Team0417/src/main/java/org/firstinspires/ftc/`, rename the `teamcode/` folder to match your team, for example `team0417/`.
+  </Step>
+  <Step title="Update AndroidManifest.xml">
+    Open `Team0417/src/main/AndroidManifest.xml` and change the package declaration:
+
+    ```xml
+    <!-- Change this: -->
+    package="org.firstinspires.ftc.teamcode"
+
+    <!-- To this: -->
+    package="org.firstinspires.ftc.team0417"
+    ```
+  </Step>
+  <Step title="Register the new module in settings.gradle">
+    Add the new module to `settings.gradle` at the project root:
+
+    ```groovy
+    include ':FtcRobotController'
+    include ':TeamCode'
+    include ':Team0417'
+    ```
+  </Step>
+  <Step title="Reopen Android Studio and clean the project">
+    Open the project again in Android Studio, then go to **Build → Clean Project** to clear any cached build artifacts before running the new module.
+  </Step>
+</Steps>
+
+<Note>
+  Multi-module club setups require comfort with file system operations and Android Studio module configuration. Make a full backup of your project before attempting this. Team members selecting the wrong module from the run configuration dropdown will deploy the wrong team's code to the robot.
+</Note>
+
+---
+
+Continue to the [OpModes Overview](opmodes/overview) to learn how to structure your robot programs, or jump to the [Hardware Map](hardware/hardware-map) guide to understand how to access motors, servos, and sensors in code.

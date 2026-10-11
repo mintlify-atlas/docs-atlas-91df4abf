@@ -1,0 +1,211 @@
+---
+title: "LinearOpMode: sequential robot programs with blocking calls"
+sidebarTitle: "Linear OpMode"
+description: "LinearOpMode lets you write robot code as a straight-line sequence. Use waitForStart(), opModeIsActive(), and opModeInInit() to structure your program."
+---
+
+`LinearOpMode` is the most commonly used OpMode base class in FTC, and it is the recommended starting point for almost all teams. Instead of splitting your logic across multiple callback methods, you write one continuous method — `runOpMode()` — that executes from top to bottom, just like any ordinary Java program. Blocking utility methods let you pause execution at the right moment (waiting for START, waiting for a timer, sleeping between actions), which makes writing multi-step autonomous routines especially natural.
+
+## The runOpMode() entry point
+
+When the driver selects your OpMode and presses INIT, the SDK calls `runOpMode()` on your class. Everything — hardware initialization, the wait-for-start pause, and the main run loop — lives inside this single method.
+
+```java
+@Override
+public void runOpMode() {
+    // 1. INIT phase: initialize hardware, post telemetry
+    // 2. Call waitForStart() to pause here until START is pressed
+    // 3. RUN phase: execute your robot program
+}
+```
+
+## Key methods
+
+### `waitForStart()`
+
+Blocks the current thread until the driver presses **START (▶)** on the Driver Station. All hardware initialization must be complete before this call. Code written after `waitForStart()` is the "run" phase of your program.
+
+```java
+waitForStart();   // execution pauses here
+// everything below runs only after START is pressed
+```
+
+### `opModeIsActive()`
+
+Returns `true` while the OpMode is in the running state (after START, before STOP). Use this as the condition for your main `while` loop so the program exits cleanly when the driver presses STOP or the match timer expires.
+
+```java
+while (opModeIsActive()) {
+    // drive, read sensors, update telemetry
+}
+```
+
+### `opModeInInit()` *(added in SDK 7.2)*
+
+Returns `true` during the init phase — after INIT is pressed but before START. Use it to run a polling loop during initialization, for example to show sensor calibration progress on telemetry while the driver waits to start.
+
+```java
+while (opModeInInit()) {
+    telemetry.addData("Gyro calibrating", imu.isGyroCalibrated() ? "Done" : "...");
+    telemetry.update();
+}
+```
+
+<Tip>
+  `opModeInInit()` is the `LinearOpMode` equivalent of `init_loop()` in iterative OpMode. It lets you keep telemetry alive and run background tasks between INIT and START without restructuring your code into callbacks.
+</Tip>
+
+### `terminateOpModeNow()` *(added in SDK 7.2)*
+
+Immediately and cleanly terminates the OpMode from within `runOpMode()`. Useful for error handling — if a critical hardware device is missing, you can display a message and stop rather than letting the program crash or behave unpredictably.
+
+```java
+if (leftDrive == null) {
+    telemetry.addData("ERROR", "left_drive not found in config");
+    telemetry.update();
+    terminateOpModeNow();
+}
+```
+
+## Complete example: BasicOpMode\_Linear
+
+The following is the full `BasicOpMode_Linear` sample from the SDK. It demonstrates a minimal two-wheel TeleOp using POV drive, and includes a commented-out Tank Drive alternative.
+
+```java
+@TeleOp(name="Basic: Linear OpMode", group="Linear Opmode")
+@Disabled
+public class BasicOpMode_Linear extends LinearOpMode {
+
+    // Declare OpMode members.
+    private ElapsedTime runtime = new ElapsedTime();
+    private DcMotor leftDrive = null;
+    private DcMotor rightDrive = null;
+
+    @Override
+    public void runOpMode() {
+        telemetry.addData("Status", "Initialized");
+        telemetry.update();
+
+        // Initialize the hardware variables. Note that the strings used here as parameters
+        // to 'get' must correspond to the names assigned during the robot configuration
+        // step (using the FTC Robot Controller app on the phone).
+        leftDrive  = hardwareMap.get(DcMotor.class, "left_drive");
+        rightDrive = hardwareMap.get(DcMotor.class, "right_drive");
+
+        // To drive forward, most robots need the motor on one side to be reversed, because
+        // the axles point in opposite directions.
+        // Pushing the left stick forward MUST make robot go forward. So adjust these two
+        // lines based on your first test drive.
+        // Note: The settings here assume direct drive on left and right wheels.
+        // Gear Reduction or 90 Deg drives may require direction flips.
+        leftDrive.setDirection(DcMotor.Direction.REVERSE);
+        rightDrive.setDirection(DcMotor.Direction.FORWARD);
+
+        // Wait for the game to start (driver presses PLAY)
+        waitForStart();
+        runtime.reset();
+
+        // run until the end of the match (driver presses STOP)
+        while (opModeIsActive()) {
+
+            // Setup a variable for each drive wheel to save power level for telemetry
+            double leftPower;
+            double rightPower;
+
+            // POV Mode uses left stick to go forward, and right stick to turn.
+            // - This uses basic math to combine motions and is easier to drive straight.
+            double drive = -gamepad1.left_stick_y;
+            double turn  =  gamepad1.right_stick_x;
+            leftPower    = Range.clip(drive + turn, -1.0, 1.0);
+            rightPower   = Range.clip(drive - turn, -1.0, 1.0);
+
+            // Tank Mode uses one stick to control each wheel.
+            // - This requires no math, but it is hard to drive forward slowly and keep straight.
+            // leftPower  = -gamepad1.left_stick_y ;
+            // rightPower = -gamepad1.right_stick_y ;
+
+            // Send calculated power to wheels
+            leftDrive.setPower(leftPower);
+            rightDrive.setPower(rightPower);
+
+            // Show the elapsed game time and wheel power.
+            telemetry.addData("Status", "Run Time: " + runtime.toString());
+            telemetry.addData("Motors", "left (%.2f), right (%.2f)", leftPower, rightPower);
+            telemetry.update();
+        }
+    }
+}
+```
+
+## Understanding the POV drive math
+
+POV (Point-Of-View) drive uses two joystick axes to control the robot intuitively: the left stick moves the robot forward and backward, and the right stick steers left or right.
+
+```java
+double drive = -gamepad1.left_stick_y;  // negative because pushing forward gives -1.0
+double turn  =  gamepad1.right_stick_x; // positive = turn right
+
+leftPower  = Range.clip(drive + turn, -1.0, 1.0);
+rightPower = Range.clip(drive - turn, -1.0, 1.0);
+```
+
+The key insight is addition and subtraction:
+
+- **Driving straight forward** (`drive = 1.0`, `turn = 0.0`): both sides get `1.0`. Equal power → straight.
+- **Turning right** (`drive = 0.0`, `turn = 1.0`): left side gets `+1.0`, right side gets `-1.0`. Opposite power → spin in place.
+- **Combined motion** (`drive = 0.8`, `turn = 0.4`): left = `1.0` (clipped), right = `0.4`. Left motor runs faster → arcs right.
+
+`Range.clip()` ensures the result never exceeds `[-1.0, 1.0]`, which is the valid power range for `DcMotor`.
+
+## Hardware initialization lifecycle rules
+
+<Warning>
+  Always retrieve hardware devices from `hardwareMap` **before** calling `waitForStart()`. The init phase is specifically designed for hardware setup. Attempting to call `hardwareMap.get()` inside your run loop is legal but wasteful, and for I2C devices (IMUs, color sensors, distance sensors) it can cause communication errors or missed data.
+</Warning>
+
+A safe structure always looks like this:
+
+```java
+@Override
+public void runOpMode() {
+    // ✅ INIT phase — hardware setup goes here
+    leftDrive  = hardwareMap.get(DcMotor.class, "left_drive");
+    rightDrive = hardwareMap.get(DcMotor.class, "right_drive");
+    // configure motor modes, directions, etc.
+
+    waitForStart();  // ← boundary between init and run
+
+    // ✅ RUN phase — motion and sensing logic goes here
+    while (opModeIsActive()) {
+        // use leftDrive, rightDrive, sensors — already initialized above
+    }
+}
+```
+
+## Using opModeInInit() for init-phase polling
+
+If your robot has a sensor that requires time to calibrate (like an IMU), you can use `opModeInInit()` to provide live feedback while the driver waits on the Driver Station.
+
+```java
+@Override
+public void runOpMode() {
+    imu = hardwareMap.get(IMU.class, "imu");
+    imu.initialize(new IMU.Parameters(/* ... */));
+
+    // Show calibration progress until driver presses START
+    while (opModeInInit()) {
+        telemetry.addData("IMU calibrated", imu.isGyroCalibrated());
+        telemetry.update();
+    }
+
+    waitForStart();
+
+    while (opModeIsActive()) {
+        // imu is calibrated and ready to use
+    }
+}
+```
+
+<Tip>
+  You can use both `opModeInInit()` and `waitForStart()` in sequence. The `while (opModeInInit())` loop exits as soon as START is pressed, and `waitForStart()` returns immediately because the START signal has already arrived.
+</Tip>

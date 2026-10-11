@@ -1,72 +1,78 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mintlify Starter Kit",
+  "name": "FTC Robot Controller",
+  "theme": "palm",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#f67e25",
+    "light": "#9d9c9d",
+    "dark": "#1f2839"
   },
-  "favicon": "/favicon.svg",
-  "navigation": {
-    "pages": [
-      {
-        "group": "Getting Started",
-        "pages": [
-          "index",
-          "quickstart"
-        ]
-      }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
+  "favicon": "https://icons.duckduckgo.com/ip3/ftc-docs.firstinspires.org.ico",
   "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
+    "light": "https://media.brand.dev/75028255-7b9a-4326-8cd2-dddea01e5ec0.png",
+    "dark": "https://media.brand.dev/75028255-7b9a-4326-8cd2-dddea01e5ec0.png"
   },
   "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:support@mintlify.com"
-      }
-    ],
     "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://app.mintlify.com"
+      "type": "github",
+      "href": "https://github.com/CalKestis/FtcRobotController"
     }
-  },
-  "contextual": {
-    "options": [
-      "copy",
-      "view",
-      "chatgpt",
-      "claude",
-      "perplexity",
-      "mcp",
-      "cursor",
-      "vscode"
-    ]
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
+      "github": "https://github.com/CalKestis/FtcRobotController"
     }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "project-structure"
+            ]
+          },
+          {
+            "group": "Writing OpModes",
+            "pages": [
+              "opmodes/overview",
+              "opmodes/linear-opmode",
+              "opmodes/iterative-opmode",
+              "opmodes/teleop-autonomous"
+            ]
+          },
+          {
+            "group": "Hardware",
+            "pages": [
+              "hardware/hardware-map",
+              "hardware/motors-servos",
+              "hardware/sensors",
+              "hardware/imu"
+            ]
+          },
+          {
+            "group": "Advanced Concepts",
+            "pages": [
+              "concepts/hardware-class",
+              "concepts/computer-vision",
+              "concepts/telemetry-gamepad",
+              "concepts/bulk-reads"
+            ]
+          },
+          {
+            "group": "Sample Reference",
+            "pages": [
+              "samples/overview",
+              "samples/robot-autonomous",
+              "samples/robot-teleop"
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

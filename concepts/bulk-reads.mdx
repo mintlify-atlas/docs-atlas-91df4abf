@@ -1,0 +1,238 @@
+---
+title: "Optimizing I2C performance with REV Hub bulk reads"
+sidebarTitle: "Bulk Reads"
+description: "Use LynxModule bulk-read caching to dramatically reduce I2C transaction count and shorten your OpMode's control loop cycle time on REV Control and Expansion Hubs."
+---
+
+Every time your OpMode calls `motor.getCurrentPosition()`, the SDK sends a request over the I2C bus to the REV Control Hub or Expansion Hub, waits for a response, and returns the value. On a robot with four drive encoders and four additional sensors, that is eight round-trip transactions per loop — and each one takes real time. If your control loop feels sluggish, or your measured loop time is higher than expected, the I2C transaction overhead is almost certainly the cause. The **bulk-read caching** feature in `LynxModule` solves this by fetching all encoder positions, velocities, digital inputs, and analog inputs in a single transaction per hub, then serving subsequent reads from an in-memory cache.
+
+## The problem: one read, one transaction
+
+Without caching, this seemingly simple code:
+
+```java
+long e1 = m1.getCurrentPosition();
+long e2 = m2.getCurrentPosition();
+long e3 = m3.getCurrentPosition();
+long e4 = m4.getCurrentPosition();
+
+double v1 = m1.getVelocity();
+double v2 = m2.getVelocity();
+double v3 = m3.getVelocity();
+double v4 = m4.getVelocity();
+```
+
+...triggers **eight separate I2C transactions** to the REV Hub. Each transaction is synchronous: the CPU stalls until the hub responds. With four motors on a single hub, this overhead alone can push your loop cycle time above 20 ms — often more.
+
+## The solution: bulk-read caching
+
+The REV Hub hardware supports a **bulk-read command** that returns all encoder positions, velocities, and I/O states for the entire hub in one transaction. The SDK's `LynxModule` class exposes three caching modes that control how this bulk read is triggered:
+
+| Mode | Description | Best for |
+|---|---|---|
+| `OFF` | Default. No caching. Every call is a fresh I2C transaction. | Debugging; simple robots with few sensors |
+| `AUTO` | SDK automatically bulk-reads and caches. Cache is refreshed when the same encoder is read twice in one cycle. | Most teams — good balance of simplicity and speed |
+| `MANUAL` | Your code controls exactly when the cache is cleared. One bulk read per loop, no extras. | Performance-critical code with maximum loop-time predictability |
+
+## Setting up bulk reads
+
+Bulk-read caching is configured per `LynxModule`. To apply the same mode to all hubs (Control Hub + any Expansion Hubs), retrieve the full list and iterate:
+
+```java
+// Important: retrieve the list once during init(), not inside the loop
+List<LynxModule> allHubs = hardwareMap.getAll(LynxModule.class);
+
+for (LynxModule hub : allHubs) {
+    hub.setBulkCachingMode(LynxModule.BulkCachingMode.AUTO);
+}
+```
+
+This works correctly whether your robot has one hub or two — the same loop handles both.
+
+<Note>
+  `AUTO` mode is the recommended starting point for most teams. It requires no changes to your read code and provides a significant speedup with minimal risk of returning stale data. Switch to `MANUAL` mode only once you understand the implications and want to squeeze out the last few milliseconds of cycle time.
+</Note>
+
+## AUTO mode
+
+In AUTO mode the SDK intercepts each encoder read. If no bulk-read has been performed yet this cycle, it fires one and caches the result. Subsequent reads for other encoders on the same hub return from the cache with no I2C traffic. The cache is automatically invalidated when the SDK detects that the same encoder has been read twice in the same cycle (a signal that a new cycle has started).
+
+**When to use AUTO:** For any OpMode where you read each encoder at most once per loop iteration. The vast majority of OpModes satisfy this requirement. Just call `setBulkCachingMode(AUTO)` during `init()` and continue writing your code normally.
+
+**When AUTO is suboptimal:** If you read the same encoder more than once per loop (for example, once for control and again inside a `telemetry.addData()` call), AUTO will fire an extra bulk read. The general advice from the SDK sample is to always save encoder readings to local variables at the top of the loop and reuse those variables everywhere else:
+
+```java
+// Good: read once, use the variable multiple times
+long pos1 = m1.getCurrentPosition();
+telemetry.addData("M1 Position", pos1);  // uses the saved variable, no extra read
+
+// Avoid: two reads of the same encoder
+telemetry.addData("M1 Position", m1.getCurrentPosition()); // triggers another I2C call
+```
+
+## MANUAL mode
+
+In MANUAL mode, **no automatic bulk reads ever occur**. The cache is never populated unless you explicitly call `clearBulkCache()`. The intended pattern is:
+
+1. At the very start of each loop iteration, call `clearBulkCache()` on every hub.
+2. Immediately read all encoder positions and velocities into local variables.
+3. The first read after a cache clear triggers a single bulk read per hub; all subsequent reads in the same cycle return from the cache at zero I2C cost.
+
+```java
+// Setup: MANUAL mode for all hubs
+List<LynxModule> allHubs = hardwareMap.getAll(LynxModule.class);
+for (LynxModule hub : allHubs) {
+    hub.setBulkCachingMode(LynxModule.BulkCachingMode.MANUAL);
+}
+
+// Loop
+while (opModeIsActive()) {
+
+    // Step 1: Clear the cache once at the top of every loop iteration
+    for (LynxModule hub : allHubs) {
+        hub.clearBulkCache();
+    }
+
+    // Step 2: Read all sensor values immediately — these trigger one bulk read per hub
+    long e1 = m1.getCurrentPosition();
+    long e2 = m2.getCurrentPosition();
+    long e3 = m3.getCurrentPosition();
+    long e4 = m4.getCurrentPosition();
+
+    double v1 = m1.getVelocity();
+    double v2 = m2.getVelocity();
+    double v3 = m3.getVelocity();
+    double v4 = m4.getVelocity();
+
+    // Step 3: Use the saved variables everywhere in the rest of the loop
+    // (No further I2C traffic for these values this cycle)
+
+    // ... control logic ...
+
+    telemetry.addData("E1", e1);
+    telemetry.addData("V1", "%.1f", v1);
+    telemetry.update();
+}
+```
+
+<Warning>
+  In MANUAL mode, forgetting to call `clearBulkCache()` at the start of each loop means **every read returns the same stale value indefinitely**. There is no runtime error or warning — your encoders will appear frozen. If sensors stop updating after switching to MANUAL mode, the missing cache clear is almost always the cause.
+</Warning>
+
+## DcMotorEx and velocity reading
+
+The SDK sample `ConceptMotorBulkRead.java` uses `DcMotorEx` (the extended motor interface) rather than the basic `DcMotor` interface. `DcMotorEx` adds `getVelocity()`, which returns encoder ticks per second, and several other encoder-control methods. Velocity data is included in the same bulk-read transaction as position data, so there is no extra cost:
+
+```java
+// Use DcMotorEx to get both position and velocity
+DcMotorEx m1 = hardwareMap.get(DcMotorEx.class, "m1");
+DcMotorEx m2 = hardwareMap.get(DcMotorEx.class, "m2");
+DcMotorEx m3 = hardwareMap.get(DcMotorEx.class, "m3");
+DcMotorEx m4 = hardwareMap.get(DcMotorEx.class, "m4");
+```
+
+You can cast any motor retrieved with `DcMotor.class` to `DcMotorEx` if you need velocity, or retrieve it directly with `DcMotorEx.class`.
+
+## Expected performance improvement
+
+The `ConceptMotorBulkRead.java` sample benchmarks all three modes over 500 cycles and prints the average milliseconds per cycle. Real-world results vary by hardware, Android phone model, and what else is running, but teams typically see:
+
+- **OFF mode** with 8 reads (4 encoders + 4 velocities): ~20–30 ms per cycle
+- **AUTO mode** with 8 reads (same): ~5–10 ms per cycle
+- **MANUAL mode** with 8 reads (same): ~3–6 ms per cycle
+
+Even switching from OFF to AUTO roughly halves loop time for a four-motor drivetrain. MANUAL buys an additional marginal improvement and is most valuable when you need consistent, jitter-free timing for closed-loop control.
+
+## Complete MANUAL mode example
+
+The following is a condensed version of the pattern from `ConceptMotorBulkRead.java`, ready to adapt to your own drivetrain:
+
+```java
+import com.qualcomm.hardware.lynx.LynxModule;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
+import java.util.List;
+
+@TeleOp(name = "Bulk Read Demo", group = "Tests")
+public class BulkReadDemo extends LinearOpMode {
+
+    private DcMotorEx m1, m2, m3, m4;
+
+    @Override
+    public void runOpMode() {
+
+        // Retrieve motors as DcMotorEx for velocity access
+        m1 = hardwareMap.get(DcMotorEx.class, "m1");
+        m2 = hardwareMap.get(DcMotorEx.class, "m2");
+        m3 = hardwareMap.get(DcMotorEx.class, "m3");
+        m4 = hardwareMap.get(DcMotorEx.class, "m4");
+
+        // Enable MANUAL bulk-read caching on every hub
+        List<LynxModule> allHubs = hardwareMap.getAll(LynxModule.class);
+        for (LynxModule hub : allHubs) {
+            hub.setBulkCachingMode(LynxModule.BulkCachingMode.MANUAL);
+        }
+
+        waitForStart();
+
+        while (opModeIsActive()) {
+
+            // *** Clear the cache ONCE at the top of every loop iteration ***
+            for (LynxModule hub : allHubs) {
+                hub.clearBulkCache();
+            }
+
+            // First read per hub triggers one bulk-read transaction; rest are free
+            long e1 = m1.getCurrentPosition();
+            long e2 = m2.getCurrentPosition();
+            long e3 = m3.getCurrentPosition();
+            long e4 = m4.getCurrentPosition();
+
+            double v1 = m1.getVelocity();
+            double v2 = m2.getVelocity();
+            double v3 = m3.getVelocity();
+            double v4 = m4.getVelocity();
+
+            // Use saved variables — no additional I2C traffic
+            telemetry.addData("Encoders", "%d  %d  %d  %d", e1, e2, e3, e4);
+            telemetry.addData("Velocities", "%.0f  %.0f  %.0f  %.0f", v1, v2, v3, v4);
+            telemetry.update();
+        }
+    }
+}
+```
+
+## Summary
+
+<Steps>
+  <Step title="Retrieve all LynxModule instances once during init()">
+    ```java
+    List<LynxModule> allHubs = hardwareMap.getAll(LynxModule.class);
+    ```
+    This automatically covers both the Control Hub and any Expansion Hubs without hard-coding hub names.
+  </Step>
+
+  <Step title="Choose a caching mode and apply it to every hub">
+    For most teams, AUTO is the right default:
+    ```java
+    for (LynxModule hub : allHubs) {
+        hub.setBulkCachingMode(LynxModule.BulkCachingMode.AUTO);
+    }
+    ```
+    Switch to MANUAL when you need maximum loop-speed predictability.
+  </Step>
+
+  <Step title="(MANUAL mode only) Clear the cache at the top of every loop iteration">
+    ```java
+    for (LynxModule hub : allHubs) {
+        hub.clearBulkCache();
+    }
+    ```
+    Place this as the very first statement inside your `while (opModeIsActive())` block.
+  </Step>
+
+  <Step title="Read each encoder/sensor exactly once and save the value">
+    Store every sensor reading in a local variable at the top of the loop. Use that variable everywhere else in the loop body — including telemetry. This prevents accidental double-reads that undermine the caching benefit in AUTO mode or cause stale-data bugs in MANUAL mode.
+  </Step>
+</Steps>
+
+For more on reading motor encoders and setting motor run modes, see [hardware/hardware-map](/hardware/hardware-map). For an overview of how the control loop runs in linear and iterative OpModes, see [opmodes/overview](/opmodes/overview).

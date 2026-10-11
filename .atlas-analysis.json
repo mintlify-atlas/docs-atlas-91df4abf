@@ -1,0 +1,98 @@
+{
+  "projectType": "framework",
+  "projectName": "FTC Robot Controller",
+  "projectDescription": "An Android application framework for FIRST Tech Challenge teams to program and control competition robots using Java OpModes with hardware abstraction for motors, servos, sensors, and computer vision.",
+  "theme": "palm",
+  "primaryColor": "#f67e25",
+  "lightColor": "#9d9c9d",
+  "darkColor": "#1f2839",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "project-structure"
+            ]
+          },
+          {
+            "group": "Writing OpModes",
+            "pages": [
+              "opmodes/overview",
+              "opmodes/linear-opmode",
+              "opmodes/iterative-opmode",
+              "opmodes/teleop-autonomous"
+            ]
+          },
+          {
+            "group": "Hardware",
+            "pages": [
+              "hardware/hardware-map",
+              "hardware/motors-servos",
+              "hardware/sensors",
+              "hardware/imu"
+            ]
+          },
+          {
+            "group": "Advanced Concepts",
+            "pages": [
+              "concepts/hardware-class",
+              "concepts/computer-vision",
+              "concepts/telemetry-gamepad",
+              "concepts/bulk-reads"
+            ]
+          },
+          {
+            "group": "Sample Reference",
+            "pages": [
+              "samples/overview",
+              "samples/robot-autonomous",
+              "samples/robot-teleop"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Linear and Iterative OpMode programming models for TeleOp and Autonomous periods",
+    "Hardware abstraction via HardwareMap for motors, servos, and sensors",
+    "Universal IMU interface supporting both BNO055 and BHI260AP inertial measurement units",
+    "TensorFlow Lite object detection and Vuforia field navigation for computer vision",
+    "OnBot Java and Blocks programming tools for in-browser robot coding without Android Studio",
+    "External hardware class pattern for sharing hardware configuration across multiple OpModes",
+    "Bulk-read support for REV Expansion/Control Hub to optimize I2C cycle times",
+    "Gamepad rumble, touchpad, and LED control APIs for driver feedback",
+    "Annotation-based OpMode registration with @TeleOp, @Autonomous, and @Disabled",
+    "TeamCode module as a clean separation point for team-specific robot code"
+  ],
+  "publicApiSurface": [
+    "LinearOpMode.runOpMode()",
+    "LinearOpMode.waitForStart()",
+    "LinearOpMode.opModeIsActive()",
+    "LinearOpMode.opModeInInit()",
+    "LinearOpMode.terminateOpModeNow()",
+    "OpMode.init() / init_loop() / start() / loop() / stop()",
+    "HardwareMap.get(Class, String)",
+    "DcMotor.setPower(double) / setMode(RunMode) / setDirection(Direction)",
+    "DcMotorEx (extended motor interface with velocity/PIDF control)",
+    "Servo.setPosition(double)",
+    "IMU.initialize(Parameters) / getAngularOrientation() / getRobotYawPitchRollAngles()",
+    "Telemetry.addData(String, Object) / update()",
+    "Gamepad.rumble(double, double, int) / rumbleBlips(int) / isRumbling()",
+    "@TeleOp(name, group) annotation",
+    "@Autonomous(name, group) annotation",
+    "@Disabled annotation",
+    "LynxModule.setBulkCachingMode(BulkCachingMode)",
+    "TFObjectDetector.loadModelFromAsset() / recognize()",
+    "VuforiaLocalizer / VuforiaTrackables",
+    "RevHubOrientationOnRobot (for IMU mounting orientation)",
+    "ElapsedTime.seconds() / milliseconds() / reset()",
+    "Range.clip(double, double, double)",
+    "FtcOpModeRegister.register(OpModeManager)"
+  ]
+}

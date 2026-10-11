@@ -1,0 +1,312 @@
+---
+title: "Computer vision with TensorFlow Lite and Vuforia in FTC"
+sidebarTitle: "Computer Vision"
+description: "Detect game elements with TensorFlow Lite object detection and navigate the field with Vuforia image targets. Both tools are integrated into the FTC SDK."
+---
+
+The FTC SDK ships with two computer vision frameworks out of the box: **TensorFlow Lite Object Detection (TFOD)** for identifying game elements by appearance, and **Vuforia** for determining the robot's precise position and orientation on the field by recognizing printed image targets. Both frameworks use the same camera feed — you initialize Vuforia first, and TFOD consumes the image stream that Vuforia produces. Understanding when to use each, and how they work together, is the foundation of vision-based autonomous routines.
+
+## Two vision systems, one camera
+
+<CardGroup cols={2}>
+  <Card title="TensorFlow Object Detection" icon="magnifying-glass">
+    **Use this when you need to classify game elements** — for example, determining which randomized sleeve is on a junction pole, or which freight object is in the shipping hub. TFOD runs a trained machine learning model on each camera frame and returns a list of detected objects with labels, confidence scores, and bounding box coordinates.
+  </Card>
+  <Card title="Vuforia Field Navigation" icon="map-pin">
+    **Use this when you need absolute field position** — for example, knowing your robot is at (24 inches, -36 inches, heading 90°) relative to the field center. Vuforia tracks printed image targets placed on the field perimeter walls and computes a 4×4 transformation matrix describing exactly where the camera is in the field coordinate frame.
+  </Card>
+</CardGroup>
+
+<Note>
+  Both TFOD and Vuforia require a **Vuforia developer license key**. You can obtain a free Development key at [developer.vuforia.com/license-manager](https://developer.vuforia.com/license-manager). License keys are always 380 characters long. Never commit your key to a public repository.
+</Note>
+
+---
+
+## TensorFlow Lite Object Detection
+
+### How it works
+
+TFOD takes individual frames from the Vuforia camera pipeline and runs them through a TensorFlow Lite `.tflite` model file. The model has been trained to recognize specific game objects and outputs a list of `Recognition` objects — one per detected item — each containing a label, confidence score, and bounding-box pixel coordinates.
+
+### Initialization sequence
+
+Because TFOD depends on Vuforia's camera feed, you always initialize Vuforia first:
+
+```java
+// Step 1: Initialize Vuforia (provides the camera frame source)
+private void initVuforia() {
+    VuforiaLocalizer.Parameters parameters = new VuforiaLocalizer.Parameters();
+    parameters.vuforiaLicenseKey = VUFORIA_KEY;
+    parameters.cameraDirection = CameraDirection.BACK; // or FRONT
+    vuforia = ClassFactory.getInstance().createVuforia(parameters);
+}
+
+// Step 2: Initialize TFOD, passing the Vuforia instance
+private void initTfod() {
+    int tfodMonitorViewId = hardwareMap.appContext.getResources().getIdentifier(
+        "tfodMonitorViewId", "id", hardwareMap.appContext.getPackageName());
+
+    TFObjectDetector.Parameters tfodParameters =
+        new TFObjectDetector.Parameters(tfodMonitorViewId);
+
+    tfodParameters.minResultConfidence = 0.75f; // ignore detections below 75% confidence
+    tfodParameters.isModelTensorFlow2  = true;
+    tfodParameters.inputSize           = 300;
+
+    tfod = ClassFactory.getInstance().createTFObjectDetector(tfodParameters, vuforia);
+
+    // Load the season model from the app's assets folder
+    tfod.loadModelFromAsset(TFOD_MODEL_ASSET, LABELS);
+    // -- OR -- load a custom model from the Robot Controller's SD card:
+    // tfod.loadModelFromFile("/sdcard/FIRST/tflitemodels/CustomTeamModel.tflite", LABELS);
+}
+```
+
+The `LABELS` array must exactly match the label strings the model was trained with:
+
+```java
+private static final String TFOD_MODEL_ASSET = "PowerPlay.tflite";
+
+private static final String[] LABELS = {
+    "1 Bolt",
+    "2 Bulb",
+    "3 Panel"
+};
+```
+
+### Activating and reading detections
+
+```java
+// Call before waitForStart() so the camera stream shows annotations during INIT
+if (tfod != null) {
+    tfod.activate();
+    // Optional: zoom in to improve accuracy at distance (> 55 cm)
+    tfod.setZoom(1.0, 16.0 / 9.0);
+}
+
+waitForStart();
+
+while (opModeIsActive()) {
+    if (tfod != null) {
+        // Returns null if no new frame has been processed since last call
+        List<Recognition> updatedRecognitions = tfod.getUpdatedRecognitions();
+
+        if (updatedRecognitions != null) {
+            telemetry.addData("# Objects Detected", updatedRecognitions.size());
+
+            for (Recognition recognition : updatedRecognitions) {
+                // Center position of the bounding box
+                double col = (recognition.getLeft() + recognition.getRight()) / 2.0;
+                double row = (recognition.getTop()  + recognition.getBottom()) / 2.0;
+
+                // Bounding box dimensions
+                double width  = Math.abs(recognition.getRight() - recognition.getLeft());
+                double height = Math.abs(recognition.getTop()   - recognition.getBottom());
+
+                telemetry.addData("Image",
+                    "%s (%.0f %% Conf.)",
+                    recognition.getLabel(),
+                    recognition.getConfidence() * 100);
+                telemetry.addData("- Position (Row/Col)", "%.0f / %.0f", row, col);
+                telemetry.addData("- Size (Width/Height)", "%.0f / %.0f", width, height);
+            }
+            telemetry.update();
+        }
+    }
+}
+```
+
+### Recognition API reference
+
+| Method | Return type | Description |
+|---|---|---|
+| `getLabel()` | `String` | The label string from the model (e.g. `"1 Bolt"`) |
+| `getConfidence()` | `float` | Detection confidence, 0.0 – 1.0 |
+| `getLeft()` | `float` | Left edge of bounding box in pixels |
+| `getRight()` | `float` | Right edge of bounding box in pixels |
+| `getTop()` | `float` | Top edge of bounding box in pixels |
+| `getBottom()` | `float` | Bottom edge of bounding box in pixels |
+
+### Using a custom team model
+
+If your team has trained a custom model (using tools like [Roboflow](https://roboflow.com/) or TFLite Model Maker), download the `.tflite` file to the Robot Controller phone's SD card at `/sdcard/FIRST/tflitemodels/` and use `loadModelFromFile()` instead of `loadModelFromAsset()`:
+
+```java
+tfod.loadModelFromFile("/sdcard/FIRST/tflitemodels/MyTeamModel.tflite", LABELS);
+```
+
+---
+
+## Vuforia Field Navigation
+
+### How it works
+
+Vuforia recognizes printed **image targets** — distinctive graphics placed on the perimeter walls of the FTC field. When Vuforia sees a target, it computes the 3-D position and orientation of the camera relative to that target. By also knowing where the target is on the field (via a manually specified transformation matrix), it can work backwards to produce the robot's position and heading in the FTC field coordinate system.
+
+### Coordinate system
+
+The FTC field uses a right-handed coordinate frame centered at the field's geometric center:
+
+- **X axis** runs left-to-right when standing at the Red Alliance Station (positive toward the right / Blue side)
+- **Y axis** runs from the Red Alliance Station toward the Blue Alliance Station (positive toward Blue)
+- **Z axis** runs upward from the floor (positive up)
+
+All distances in the Vuforia navigation code are in **millimeters**.
+
+### Initialization
+
+```java
+// Get the camera preview view ID (enables on-phone preview)
+int cameraMonitorViewId = hardwareMap.appContext.getResources().getIdentifier(
+    "cameraMonitorViewId", "id", hardwareMap.appContext.getPackageName());
+
+VuforiaLocalizer.Parameters parameters =
+    new VuforiaLocalizer.Parameters(cameraMonitorViewId);
+
+parameters.vuforiaLicenseKey = VUFORIA_KEY;
+parameters.cameraDirection   = BACK;       // Use the rear-facing camera
+parameters.useExtendedTracking = false;    // Disable extended tracking
+
+vuforia = ClassFactory.getInstance().createVuforia(parameters);
+
+// Load the season's target images from the app asset bundle
+VuforiaTrackables targets = vuforia.loadTrackablesFromAsset("PowerPlay");
+```
+
+### Placing targets on the field
+
+Each `VuforiaTrackable` must be told where it physically lives on the field. The SDK sample places the four PowerPlay targets like this:
+
+```java
+// Helper: name a target and set its field position (mm) and rotation (degrees)
+void identifyTarget(int targetIndex, String targetName,
+                    float dx, float dy, float dz,
+                    float rx, float ry, float rz) {
+    VuforiaTrackable aTarget = targets.get(targetIndex);
+    aTarget.setName(targetName);
+    aTarget.setLocation(OpenGLMatrix
+        .translation(dx, dy, dz)
+        .multiplied(Orientation.getRotationMatrix(EXTRINSIC, XYZ, DEGREES, rx, ry, rz)));
+}
+
+// PowerPlay wall targets
+final float mmPerInch      = 25.4f;
+final float mmTargetHeight = 6 * mmPerInch;
+final float halfField      = 72 * mmPerInch;
+final float oneAndHalfTile = 36 * mmPerInch;
+
+identifyTarget(0, "Red Audience Wall",  -halfField, -oneAndHalfTile, mmTargetHeight, 90, 0,  90);
+identifyTarget(1, "Red Rear Wall",       halfField, -oneAndHalfTile, mmTargetHeight, 90, 0, -90);
+identifyTarget(2, "Blue Audience Wall", -halfField,  oneAndHalfTile, mmTargetHeight, 90, 0,  90);
+identifyTarget(3, "Blue Rear Wall",      halfField,  oneAndHalfTile, mmTargetHeight, 90, 0, -90);
+```
+
+### Telling Vuforia where the camera is on the robot
+
+You must describe how the camera is mounted on the robot relative to the robot's center. This is the **phone-on-robot** transformation:
+
+```java
+// Camera mounted at robot center, 6 inches above ground, facing forward
+final float CAMERA_FORWARD_DISPLACEMENT  = 0.0f * mmPerInch;
+final float CAMERA_VERTICAL_DISPLACEMENT = 6.0f * mmPerInch;
+final float CAMERA_LEFT_DISPLACEMENT     = 0.0f * mmPerInch;
+
+OpenGLMatrix robotFromCamera = OpenGLMatrix
+    .translation(CAMERA_FORWARD_DISPLACEMENT, CAMERA_LEFT_DISPLACEMENT,
+                 CAMERA_VERTICAL_DISPLACEMENT)
+    .multiplied(Orientation.getRotationMatrix(
+        EXTRINSIC, YZX, DEGREES, phoneYRotate, phoneZRotate, phoneXRotate));
+
+// Propagate camera placement to every trackable
+for (VuforiaTrackable trackable : allTrackables) {
+    ((VuforiaTrackableDefaultListener) trackable.getListener())
+        .setPhoneInformation(robotFromCamera, parameters.cameraDirection);
+}
+```
+
+### Reading robot position in the loop
+
+```java
+targets.activate();
+
+while (!isStopRequested()) {
+    boolean targetVisible = false;
+
+    for (VuforiaTrackable trackable : allTrackables) {
+        if (((VuforiaTrackableDefaultListener) trackable.getListener()).isVisible()) {
+            telemetry.addData("Visible Target", trackable.getName());
+            targetVisible = true;
+
+            OpenGLMatrix robotLocationTransform =
+                ((VuforiaTrackableDefaultListener) trackable.getListener())
+                    .getUpdatedRobotLocation();
+
+            if (robotLocationTransform != null) {
+                lastLocation = robotLocationTransform;
+            }
+            break;
+        }
+    }
+
+    if (targetVisible) {
+        // Position in inches
+        VectorF translation = lastLocation.getTranslation();
+        telemetry.addData("Pos (inches)", "{X, Y, Z} = %.1f, %.1f, %.1f",
+            translation.get(0) / mmPerInch,
+            translation.get(1) / mmPerInch,
+            translation.get(2) / mmPerInch);
+
+        // Orientation in degrees
+        Orientation rotation = Orientation.getOrientation(
+            lastLocation, EXTRINSIC, XYZ, DEGREES);
+        telemetry.addData("Rot (deg)", "{Roll, Pitch, Heading} = %.0f, %.0f, %.0f",
+            rotation.firstAngle, rotation.secondAngle, rotation.thirdAngle);
+    } else {
+        telemetry.addData("Visible Target", "none");
+    }
+    telemetry.update();
+}
+
+targets.deactivate(); // Always deactivate when done
+```
+
+---
+
+## Webcam support
+
+Both TFOD and Vuforia support **USB UVC webcams** in addition to the built-in phone camera. Using a webcam often provides a steadier image because the camera is mounted rigidly to the robot rather than depending on the phone's position. To use a webcam, replace the `cameraDirection` parameter with a `WebcamName` reference:
+
+```java
+parameters.camera = hardwareMap.get(WebcamName.class, "Webcam 1");
+```
+
+The rest of the initialization code is identical. See `ConceptVuforiaFieldNavigationWebcam.java` in the samples for a complete example.
+
+---
+
+## Choosing the right tool
+
+<Tabs>
+  <Tab title="TensorFlow Object Detection">
+    **Best for:** Autonomous routines that need to identify which randomized game element is present before choosing a path.
+
+    **Typical use:** At the start of autonomous, scan the field for 1–2 seconds, determine which of the three randomized positions has the target element, then navigate to the corresponding scoring location.
+
+    **Limitations:** TFOD tells you *what* is in the image and *where in the image* it is, but not the robot's absolute position on the field.
+  </Tab>
+  <Tab title="Vuforia Navigation">
+    **Best for:** Autonomous routines that need continuous position feedback to drive to specific field coordinates.
+
+    **Typical use:** After driving to a rough position using encoders, refine location using Vuforia, then execute precise final approach maneuvers.
+
+    **Limitations:** Navigation only works when at least one image target is visible. If the robot turns away from all targets, position data goes stale. Range is limited to a few feet.
+  </Tab>
+  <Tab title="Both Together">
+    **Best for:** Full autonomous routines that need to identify an element *and* navigate precisely.
+
+    **How:** Initialize both in the same OpMode. Use TFOD during the identification phase (beginning of autonomous), then switch to using Vuforia navigation data for field positioning. Since they share the same Vuforia engine instance, there is minimal extra overhead.
+  </Tab>
+</Tabs>
+
+For more on reading hardware devices in your OpMode, see [opmodes/overview](/opmodes/overview) and [hardware/hardware-map](/hardware/hardware-map).

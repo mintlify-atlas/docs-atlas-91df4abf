@@ -1,0 +1,253 @@
+---
+title: "Controlling DC motors and servos in FTC OpModes"
+sidebarTitle: "Motors & Servos"
+description: "Control DC motors with DcMotor and DcMotorEx, and position servos with Servo and CRServo. Set directions, run modes, encoder targets, and power levels."
+---
+
+Motors and servos are the primary actuators on an FTC robot, and the SDK gives you two distinct APIs to work with: `DcMotor` (and its extended sibling `DcMotorEx`) for brushed DC motors, and `Servo` / `CRServo` for positional and continuous-rotation servos. All four types are retrieved from `hardwareMap` during the init phase and then commanded throughout your run loop. This page covers every major method with real examples drawn from `BasicOpMode_Linear.java` and `RobotHardware.java`.
+
+## DcMotor
+
+`DcMotor` is the basic interface for any brushed motor plugged into a REV Control Hub or Expansion Hub motor port.
+
+### Setting power
+
+```java
+motor.setPower(double power);  // Range: -1.0 to 1.0
+```
+
+`+1.0` is full power in the **forward** direction; `-1.0` is full power in **reverse**; `0.0` stops the motor (behavior at zero depends on `ZeroPowerBehavior`). Always clamp values you pass — sending power outside ±1.0 is harmless but signals a logic error in your code.
+
+### Setting direction
+
+```java
+motor.setDirection(DcMotor.Direction.FORWARD);  // or REVERSE
+```
+
+On a differential drive robot the left and right motors face opposite directions because their axles point opposite ways. You must reverse one side so that calling `setPower(+1.0)` on both makes the robot drive *forward*, not spin in place:
+
+```java
+leftDrive.setDirection(DcMotor.Direction.REVERSE);   // per BasicOpMode_Linear.java
+rightDrive.setDirection(DcMotor.Direction.FORWARD);
+```
+
+<Note>
+  "Forward" and "reverse" are relative to the motor's **shaft rotation**, not the robot's movement. Always verify direction on your first test drive and swap as needed. Gear reductions or 90° bevel drives may require additional flips.
+</Note>
+
+### Run modes
+
+`RunMode` controls how the motor controller interprets the commands you send:
+
+| RunMode | What it does |
+|---|---|
+| `RUN_WITHOUT_ENCODER` | Raw PWM. `setPower()` drives output directly. No encoder feedback. |
+| `RUN_USING_ENCODER` | Velocity control. The hub uses encoder feedback to maintain the requested power as a constant speed. |
+| `RUN_TO_POSITION` | Position control. Motor drives to `setTargetPosition()`, then holds. Check `isBusy()`. |
+| `STOP_AND_RESET_ENCODER` | Zeroes the encoder counter. Always follow with another mode before commanding power. |
+
+```java
+// Reset encoder, then switch to position control
+motor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+motor.setTargetPosition(1120);                          // ~1 revolution on a HD Hex Motor
+motor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+motor.setPower(0.4);                                    // power applied toward target
+
+while (motor.isBusy()) {
+    telemetry.addData("Encoder", motor.getCurrentPosition());
+    telemetry.update();
+}
+motor.setPower(0.0);                                    // stop when done
+```
+
+<Tip>
+  Always call `STOP_AND_RESET_ENCODER` followed immediately by your desired run mode before commanding power. Forgetting the mode switch after a reset leaves the motor in `STOP_AND_RESET_ENCODER` mode, which ignores `setPower()`.
+</Tip>
+
+### Reading the encoder
+
+```java
+int ticks = motor.getCurrentPosition();  // encoder tick count; can be negative
+boolean running = motor.isBusy();        // true only while RUN_TO_POSITION is active
+```
+
+### Zero-power behavior
+
+```java
+motor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);  // or FLOAT
+```
+
+- **BRAKE** — the motor controller actively shorts the motor terminals to resist movement. Good for arms and lifts that need to hold position.
+- **FLOAT** — the motor coasts freely. Better for drive wheels that need to roll smoothly to a stop.
+
+## DcMotorEx
+
+`DcMotorEx` extends `DcMotor` with velocity control and PIDF tuning. Cast or retrieve as `DcMotorEx` when your motor has an encoder and you want closed-loop speed control:
+
+```java
+DcMotorEx motorEx = hardwareMap.get(DcMotorEx.class, "left_drive");
+```
+
+### Velocity control
+
+```java
+motorEx.setVelocity(double ticksPerSecond);
+```
+
+Velocity is in encoder ticks per second at the motor shaft. You still call `setMode(RUN_USING_ENCODER)` first. The hub's built-in PID loop maintains the commanded velocity as load changes.
+
+### PIDF tuning
+
+```java
+PIDFCoefficients coeffs = new PIDFCoefficients(10, 0.5, 0, 12);
+motorEx.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, coeffs);
+```
+
+Start with the SDK defaults and adjust if your robot's speed is inconsistent under load. See `ConceptMotorBulkRead` for an example that reads encoder data from multiple `DcMotorEx` motors efficiently.
+
+## Servo
+
+A standard `Servo` moves to an absolute position between `0.0` and `1.0`, where `0.0` is one mechanical extreme and `1.0` is the other.
+
+### Commanding position
+
+```java
+servo.setPosition(double position);  // 0.0 to 1.0
+double pos = servo.getPosition();    // returns last commanded position
+```
+
+The `RobotHardware.java` sample defines constants you can reuse:
+
+```java
+public static final double MID_SERVO  = 0.5;   // centred
+public static final double HAND_SPEED = 0.02;  // position increment per loop cycle
+```
+
+### Mirrored servo pairs
+
+Many claw and intake designs use two servos facing each other. Setting them to mirrored positions opens or closes the mechanism symmetrically. The `setHandPositions()` method from `RobotHardware.java` shows the pattern:
+
+```java
+public void setHandPositions(double offset) {
+    offset = Range.clip(offset, -0.5, 0.5);
+    leftHand.setPosition(MID_SERVO + offset);   // one servo goes up…
+    rightHand.setPosition(MID_SERVO - offset);  // …the other goes down
+}
+```
+
+`offset = 0` centres both servos. `offset = +0.5` opens them fully. `offset = -0.5` closes them fully.
+
+### Scanning a servo
+
+The `ConceptScanServo.java` sample sweeps a servo back and forth to verify mechanical range — useful during initial build testing:
+
+```java
+static final double INCREMENT = 0.01;  // position change per 50 ms cycle
+static final double MAX_POS   = 1.0;
+static final double MIN_POS   = 0.0;
+
+double  position = (MAX_POS - MIN_POS) / 2; // start at centre
+boolean rampUp   = true;
+
+// In the run loop:
+if (rampUp) {
+    position += INCREMENT;
+    if (position >= MAX_POS) { position = MAX_POS; rampUp = false; }
+} else {
+    position -= INCREMENT;
+    if (position <= MIN_POS) { position = MIN_POS; rampUp = true; }
+}
+servo.setPosition(position);
+sleep(50);
+```
+
+## CRServo (continuous rotation servo)
+
+A `CRServo` is controlled exactly like a motor — it spins continuously in either direction rather than moving to a target angle:
+
+```java
+CRServo intake = hardwareMap.get(CRServo.class, "intake");
+intake.setPower(1.0);   // full speed one direction
+intake.setPower(-1.0);  // full speed opposite direction
+intake.setPower(0.0);   // stop
+```
+
+There is no `setPosition()` on a `CRServo`. Use it for roller intakes, conveyor belts, and any continuous mechanism driven by a servo-sized motor.
+
+## Full differential drive example
+
+Putting it all together, here is the complete drive logic from `RobotHardware.java`:
+
+```java
+/**
+ * Calculates left/right motor powers for combined drive and turn input,
+ * then sends them to the motors.
+ *
+ * @param Drive  Fwd/Rev power (-1.0 to 1.0); +ve is forward
+ * @param Turn   Right/Left power (-1.0 to 1.0); +ve is clockwise
+ */
+public void driveRobot(double Drive, double Turn) {
+    double left  = Drive + Turn;
+    double right = Drive - Turn;
+
+    // Scale so neither value exceeds ±1.0
+    double max = Math.max(Math.abs(left), Math.abs(right));
+    if (max > 1.0) {
+        left  /= max;
+        right /= max;
+    }
+    setDrivePower(left, right);
+}
+
+public void setDrivePower(double leftWheel, double rightWheel) {
+    leftDrive.setPower(leftWheel);
+    rightDrive.setPower(rightWheel);
+}
+```
+
+And the corresponding OpMode gamepad input, following the POV mode from `BasicOpMode_Linear.java`:
+
+```java
+// In the run loop:
+double drive = -gamepad1.left_stick_y;  // push forward = negative Y on stick
+double turn  =  gamepad1.right_stick_x;
+
+double leftPower  = Range.clip(drive + turn, -1.0, 1.0);
+double rightPower = Range.clip(drive - turn, -1.0, 1.0);
+
+leftDrive.setPower(leftPower);
+rightDrive.setPower(rightPower);
+
+telemetry.addData("Motors", "left (%.2f), right (%.2f)", leftPower, rightPower);
+telemetry.update();
+```
+
+<Note>
+  `gamepad1.left_stick_y` is **negative** when the stick is pushed forward (up on the physical stick). Negating it converts to the FTC convention where positive power = forward motion.
+</Note>
+
+## Arm motor constants
+
+`RobotHardware.java` also defines constants for a lift or arm motor:
+
+```java
+public static final double ARM_UP_POWER   =  0.45;
+public static final double ARM_DOWN_POWER = -0.45;
+```
+
+Using named constants instead of bare numbers makes your code self-documenting and easy to tune:
+
+```java
+if (gamepad2.dpad_up)
+    robot.setArmPower(RobotHardware.ARM_UP_POWER);
+else if (gamepad2.dpad_down)
+    robot.setArmPower(RobotHardware.ARM_DOWN_POWER);
+else
+    robot.setArmPower(0);
+```
+
+## Next steps
+
+- Retrieve motors and servos by name → [HardwareMap](/hardware/hardware-map)
+- Read sensor values in your loop → [Sensors](/hardware/sensors)
+- Add heading control with the IMU → [IMU](/hardware/imu)

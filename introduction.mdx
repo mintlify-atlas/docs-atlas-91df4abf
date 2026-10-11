@@ -1,0 +1,97 @@
+---
+title: "FTC Robot Controller: The FIRST Tech Challenge SDK"
+sidebarTitle: "Introduction"
+description: "Learn how the FTC Robot Controller SDK works, what components make up the control system, and which programming approach fits your team."
+---
+
+The FTC Robot Controller SDK is an Android application framework that lets student developers write Java programs to control *FIRST* Tech Challenge competition robots. When your team builds a robot, this SDK is what bridges your code to every motor, servo, and sensor attached to the hardware. Version 8.1.1 of the SDK targets the **POWERPLAY (2022–2023)** season and is the foundation for everything covered in this guide.
+
+## What is the FTC Control System?
+
+Every FTC robot uses a two-device control system that communicates over a Wi-Fi Direct connection:
+
+- **Robot Controller (RC)** — runs the Robot Controller app (this SDK) on either a REV Control Hub or an approved Android phone attached to the robot. It executes your OpModes and talks directly to the REV Expansion/Control Hub hardware over USB or RS-485.
+- **Driver Station (DS)** — a separate Android device held by your drivers. It displays telemetry data sent from the RC, lets drivers pick and start OpModes, and forwards gamepad input to the robot in real time.
+
+The two apps must be on matching versions (both 8.1.1 for this guide) to communicate. Mismatched versions will display an error on the Driver Station.
+
+## The SDK Architecture
+
+The Android Studio project contains two Gradle modules that serve very different purposes:
+
+| Module | Purpose |
+|---|---|
+| `FtcRobotController` | The core SDK app maintained by FIRST. Contains the Android Activity, OpMode registration infrastructure, and all bundled sample OpModes. **Do not modify files in this module.** |
+| `TeamCode` | Your team's workspace. Every custom OpMode and hardware class your team writes lives here. This is the only module you need to touch. |
+
+The two modules are declared in `settings.gradle`:
+
+```groovy
+include ':FtcRobotController'
+include ':TeamCode'
+```
+
+`TeamCode` depends on `FtcRobotController`, which in turn pulls in the SDK libraries listed in `build.dependencies.gradle`. When FIRST releases a new SDK version each season, you update the `FtcRobotController` module while your code in `TeamCode` stays intact.
+
+## Programming Paths
+
+FIRST supports three ways to write robot programs. This documentation covers the **Android Studio** path, which gives you the full power of a professional IDE.
+
+<CardGroup cols={3}>
+  <Card title="Blocks" icon="puzzle-piece">
+    A visual, drag-and-drop programming environment accessed through any web browser connected to the Robot Controller. No software installation needed. Great for beginners and rapid prototyping.
+  </Card>
+  <Card title="OnBot Java" icon="globe">
+    Write Java code directly in a browser-based editor served by the Robot Controller. No Android Studio required. Good for teams that are comfortable with Java but want a simpler setup.
+  </Card>
+  <Card title="Android Studio" icon="laptop-code">
+    A full local IDE with code completion, debugging, refactoring, and version control. Required for advanced features like external libraries and custom hardware drivers. This is the focus of this guide.
+  </Card>
+</CardGroup>
+
+<Note>
+  Android Studio requires a computer with Android Studio **Chipmunk 2021.2.1 or later** installed. If your team only uses Blocks or OnBot Java, you do not need to download this repository at all — those tools run entirely on the Robot Controller device.
+</Note>
+
+## Key SDK Components
+
+Understanding these four building blocks will help you read any FTC code sample:
+
+**OpMode**
+The base class for all robot programs. Every program you write extends either `LinearOpMode` (runs top-to-bottom like a normal Java program) or `OpMode` (event-loop style with `init()` and `loop()` callbacks). OpModes are registered with the Driver Station using the `@TeleOp` or `@Autonomous` annotation.
+
+**HardwareMap**
+A registry that maps the string device names you define in the robot configuration file to the actual Java objects that control your hardware. You retrieve devices at the start of your OpMode:
+
+```java
+DcMotor leftDrive = hardwareMap.get(DcMotor.class, "left_drive");
+```
+
+**Telemetry**
+Sends text and numeric data from the Robot Controller to the Driver Station screen. Essential for debugging:
+
+```java
+telemetry.addData("Status", "Running");
+telemetry.addData("Motor Power", "%.2f", leftPower);
+telemetry.update(); // must call update() to push data to the DS
+```
+
+**Gamepad**
+Provides access to the driver gamepad inputs. Two gamepads (`gamepad1` and `gamepad2`) are available inside any OpMode. Joystick axes return `float` values from `-1.0` to `1.0`; buttons return `boolean`.
+
+```java
+double drive = -gamepad1.left_stick_y;
+double turn  =  gamepad1.right_stick_x;
+```
+
+## SDK Version
+
+| Field | Value |
+|---|---|
+| SDK Version | 8.1.1 (released 2022-12-01) |
+| Season | POWERPLAY 2022–2023 |
+| Minimum Android SDK | 23 (Android 6.0 Marshmallow) |
+| Required Android Studio | Chipmunk 2021.2.1 or later |
+| Java Language Level | Java 8 |
+
+Ready to set up your project? Continue to the [Quickstart](quickstart) guide.

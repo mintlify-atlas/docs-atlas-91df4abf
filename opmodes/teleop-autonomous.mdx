@@ -1,0 +1,239 @@
+---
+title: "TeleOp vs Autonomous: choosing the right OpMode type"
+sidebarTitle: "TeleOp & Autonomous"
+description: "TeleOp OpModes respond to gamepad input during the driver-controlled period. Autonomous OpModes run pre-programmed sequences without driver input."
+---
+
+Every FTC match is divided into two periods: a 30-second Autonomous period at the start where the robot runs entirely on its own, followed by a 2-minute TeleOp (driver-controlled) period. You write a separate OpMode for each, annotate them differently, and select them independently on the Driver Station. Understanding which annotation to use — and what each period demands of your code — is one of the first practical skills to develop as an FTC programmer.
+
+<CardGroup cols={2}>
+  <Card title="TeleOp" icon="gamepad">
+    **Duration:** ~2 minutes
+
+    Driver-controlled. Both gamepads are active. Robot responds in real time to joystick and button input. Use `@TeleOp` to register.
+  </Card>
+  <Card title="Autonomous" icon="robot">
+    **Duration:** 30 seconds
+
+    No driver input. Robot executes a pre-programmed sequence of actions. Use `@Autonomous` to register. `LinearOpMode` is the natural fit.
+  </Card>
+</CardGroup>
+
+## Annotations
+
+### @TeleOp
+
+Registers the class as a TeleOp OpMode. It appears in the **TeleOp** section of the Driver Station's OpMode list.
+
+```java
+@TeleOp(name = "Drive: POV", group = "Competition")
+public class PovDriveTeleOp extends LinearOpMode { ... }
+```
+
+### @Autonomous
+
+Registers the class as an Autonomous OpMode. It appears in the **Autonomous** section, completely separate from TeleOp entries, so drivers cannot accidentally select an auto routine during TeleOp.
+
+```java
+@Autonomous(name = "Red: Park Corner", group = "Red Alliance")
+public class RedParkCornerAuto extends LinearOpMode { ... }
+```
+
+Both annotations accept the same `name` and `group` string parameters. See [OpMode overview](opmodes/overview) for a full description of how names and groups appear on the Driver Station.
+
+## Gamepad access
+
+During TeleOp, your OpMode has access to two gamepad fields inherited from the base class:
+
+| Field | Controller |
+|---|---|
+| `gamepad1` | Primary driver (Driver 1) |
+| `gamepad2` | Secondary driver / operator (Driver 2) |
+
+Each gamepad exposes axes (floating-point `-1.0` to `1.0`) and buttons (`boolean`):
+
+```java
+// Axes
+float leftX  = gamepad1.left_stick_x;
+float leftY  = gamepad1.left_stick_y;   // negative when pushed forward
+float rightX = gamepad1.right_stick_x;
+float rightY = gamepad1.right_stick_y;
+
+// Buttons
+boolean aPressed = gamepad1.a;
+boolean bPressed = gamepad1.b;
+boolean xPressed = gamepad1.x;
+boolean yPressed = gamepad1.y;
+```
+
+<Note>
+  Gamepad input is **not available during Autonomous**. The SDK does not route gamepad data to Autonomous OpModes. Any code that reads from `gamepad1` or `gamepad2` during an Autonomous OpMode will always receive zero/false values. Reserve gamepad logic for TeleOp.
+</Note>
+
+## Drive modes
+
+### Tank Drive
+
+Each stick controls one side of the drivetrain independently. Simple to understand, but hard to drive in a straight line because the two sticks must be pushed to exactly the same position.
+
+```java
+// Tank Drive: left stick → left motor, right stick → right motor
+double leftPower  = -gamepad1.left_stick_y;
+double rightPower = -gamepad1.right_stick_y;
+
+leftDrive.setPower(leftPower);
+rightDrive.setPower(rightPower);
+```
+
+### POV Drive
+
+One stick drives forward/backward and the other steers. More intuitive for most drivers because forward always means forward.
+
+```java
+// POV Drive: left stick for speed, right stick for steering
+double drive = -gamepad1.left_stick_y;  // negate: forward stick = positive power
+double turn  =  gamepad1.right_stick_x;
+
+double leftPower  = Range.clip(drive + turn, -1.0, 1.0);
+double rightPower = Range.clip(drive - turn, -1.0, 1.0);
+
+leftDrive.setPower(leftPower);
+rightDrive.setPower(rightPower);
+```
+
+Adding `turn` to the left side and subtracting it from the right creates the differential that steers the robot. `Range.clip()` keeps the result in the valid `[-1.0, 1.0]` motor power range.
+
+### Omni / Mecanum Drive
+
+A four-wheel holonomic drivetrain can move in any direction — including sideways (strafing) — by mixing three independent motion axes: axial (forward/back), lateral (left/right strafe), and yaw (rotation). The `BasicOmniOpMode_Linear` sample demonstrates this pattern:
+
+```java
+// Read three axes from the gamepads
+double axial   = -gamepad1.left_stick_y;   // forward/back (negate: stick forward = positive)
+double lateral =  gamepad1.left_stick_x;   // strafe left/right
+double yaw     =  gamepad1.right_stick_x;  // rotate
+
+// Mix axes into per-wheel power values
+double leftFrontPower  = axial + lateral + yaw;
+double rightFrontPower = axial - lateral - yaw;
+double leftBackPower   = axial - lateral + yaw;
+double rightBackPower  = axial + lateral - yaw;
+
+// Normalize so no wheel exceeds 100% power
+double max = Math.max(Math.abs(leftFrontPower), Math.abs(rightFrontPower));
+max = Math.max(max, Math.abs(leftBackPower));
+max = Math.max(max, Math.abs(rightBackPower));
+
+if (max > 1.0) {
+    leftFrontPower  /= max;
+    rightFrontPower /= max;
+    leftBackPower   /= max;
+    rightBackPower  /= max;
+}
+
+leftFrontDrive.setPower(leftFrontPower);
+rightFrontDrive.setPower(rightFrontPower);
+leftBackDrive.setPower(leftBackPower);
+rightBackDrive.setPower(rightBackPower);
+```
+
+The normalization step (dividing all four values by `max` when `max > 1.0`) preserves the intended ratio of speeds between wheels, ensuring the robot still moves in the correct direction even when the combined power would exceed 100%.
+
+## Writing an Autonomous OpMode
+
+Autonomous programs use `LinearOpMode` almost universally because the sequential style directly mirrors the step-by-step nature of a pre-programmed routine. The pattern is:
+
+1. Initialize hardware in the init phase.
+2. Call `waitForStart()`.
+3. Execute each action step, guarding every timed loop with `opModeIsActive()` so the program exits cleanly if the driver presses STOP.
+
+### Timed autonomous with ElapsedTime
+
+The `RobotAutoDriveByTime_Linear` sample shows how to drive a path using time rather than encoders — a great starting point when your robot has no wheel encoders.
+
+```java
+@Autonomous(name="Robot: Auto Drive By Time", group="Robot")
+@Disabled
+public class RobotAutoDriveByTime_Linear extends LinearOpMode {
+
+    private DcMotor leftDrive  = null;
+    private DcMotor rightDrive = null;
+    private ElapsedTime runtime = new ElapsedTime();
+
+    static final double FORWARD_SPEED = 0.6;
+    static final double TURN_SPEED    = 0.5;
+
+    @Override
+    public void runOpMode() {
+
+        // Initialize hardware
+        leftDrive  = hardwareMap.get(DcMotor.class, "left_drive");
+        rightDrive = hardwareMap.get(DcMotor.class, "right_drive");
+
+        leftDrive.setDirection(DcMotor.Direction.REVERSE);
+        rightDrive.setDirection(DcMotor.Direction.FORWARD);
+
+        telemetry.addData("Status", "Ready to run");
+        telemetry.update();
+
+        // Wait for PLAY
+        waitForStart();
+
+        // Step 1: Drive forward for 3 seconds
+        leftDrive.setPower(FORWARD_SPEED);
+        rightDrive.setPower(FORWARD_SPEED);
+        runtime.reset();
+        while (opModeIsActive() && (runtime.seconds() < 3.0)) {
+            telemetry.addData("Path", "Leg 1: %4.1f S Elapsed", runtime.seconds());
+            telemetry.update();
+        }
+
+        // Step 2: Spin right for 1.3 seconds
+        leftDrive.setPower(TURN_SPEED);
+        rightDrive.setPower(-TURN_SPEED);
+        runtime.reset();
+        while (opModeIsActive() && (runtime.seconds() < 1.3)) {
+            telemetry.addData("Path", "Leg 2: %4.1f S Elapsed", runtime.seconds());
+            telemetry.update();
+        }
+
+        // Step 3: Drive backward for 1 second
+        leftDrive.setPower(-FORWARD_SPEED);
+        rightDrive.setPower(-FORWARD_SPEED);
+        runtime.reset();
+        while (opModeIsActive() && (runtime.seconds() < 1.0)) {
+            telemetry.addData("Path", "Leg 3: %4.1f S Elapsed", runtime.seconds());
+            telemetry.update();
+        }
+
+        // Step 4: Stop
+        leftDrive.setPower(0);
+        rightDrive.setPower(0);
+
+        telemetry.addData("Path", "Complete");
+        telemetry.update();
+        sleep(1000);
+    }
+}
+```
+
+Each "leg" of the path follows the same pattern:
+1. Set motor powers for the desired motion.
+2. Reset the `ElapsedTime` timer.
+3. Loop with `while (opModeIsActive() && runtime.seconds() < N)` to run for exactly `N` seconds.
+
+The `opModeIsActive()` check in every loop condition is essential — without it, the OpMode would ignore a STOP command and keep running past the end of the match.
+
+<Warning>
+  Timed autonomous is **not repeatable** — slight variations in battery voltage, floor surface, and robot weight will cause the robot to stop in a slightly different place each run. Use encoder-based or vision-based navigation for competition-critical autonomous routines. Timed auto is best for prototyping and practice.
+</Warning>
+
+## Auto TeleOp preselection (SDK 6.1+)
+
+Starting in SDK 6.1, the Driver Station remembers which TeleOp OpMode you last used and offers to pre-select it before you even finish your Autonomous run. This saves time in the transition period between Autonomous and TeleOp — the driver can queue up their TeleOp while autonomous is still executing, then press START the moment the transition begins.
+
+To take advantage of this feature, make sure your TeleOp OpMode has a distinct, recognizable name set in its `@TeleOp` annotation, so it's easy to identify in the pre-selection list.
+
+<Tip>
+  Organize your competition OpModes into a consistent group (e.g., `group = "Competition"`) and keep practice and test OpModes in a separate group. This keeps the Driver Station list short and reduces the chance of selecting the wrong program during a match.
+</Tip>

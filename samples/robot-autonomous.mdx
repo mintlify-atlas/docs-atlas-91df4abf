@@ -1,0 +1,347 @@
+---
+title: "Autonomous drive samples: time, encoder, gyro, and line"
+sidebarTitle: "Autonomous Samples"
+description: "Four Robot autonomous samples show progressive approaches to driving a path: timed, encoder-based, gyro-corrected, and optical line-following."
+---
+
+The SDK includes four autonomous drive samples that form a natural progression from "simple but imprecise" to "complex but accurate." Each one builds on the concepts of the previous, and all four share the same two-motor differential drive hardware configuration (`left_drive` and `right_drive`). As a `LinearOpMode`, each sample runs sequentially from top to bottom — which maps perfectly to the step-by-step nature of an autonomous routine. Working through all four gives you a solid foundation in every major approach to robot navigation in FTC.
+
+<Note>
+  All four samples include the `@Disabled` annotation. Remember to remove it after copying to your TeamCode package, or the OpMode will not appear on the Driver Station. See the [Sample Overview](/samples/overview) for copy instructions.
+</Note>
+
+---
+
+## RobotAutoDriveByTime\_Linear
+
+**The simplest possible autonomous.** This sample runs each drive motor at a fixed power level for a fixed duration using an `ElapsedTime` timer. No sensors, no encoders — just set power, wait, stop, and repeat for each leg of the path.
+
+```java
+@Autonomous(name="Robot: Auto Drive By Time", group="Robot")
+@Disabled
+public class RobotAutoDriveByTime_Linear extends LinearOpMode {
+
+    private DcMotor leftDrive  = null;
+    private DcMotor rightDrive = null;
+    private ElapsedTime runtime = new ElapsedTime();
+
+    static final double FORWARD_SPEED = 0.6;
+    static final double TURN_SPEED    = 0.5;
+```
+
+The sample drives a three-leg path:
+
+```java
+// Step 1: Drive forward for 3 seconds
+leftDrive.setPower(FORWARD_SPEED);
+rightDrive.setPower(FORWARD_SPEED);
+runtime.reset();
+while (opModeIsActive() && (runtime.seconds() < 3.0)) {
+    telemetry.addData("Path", "Leg 1: %4.1f S Elapsed", runtime.seconds());
+    telemetry.update();
+}
+
+// Step 2: Spin right for 1.3 seconds
+leftDrive.setPower(TURN_SPEED);
+rightDrive.setPower(-TURN_SPEED);
+runtime.reset();
+while (opModeIsActive() && (runtime.seconds() < 1.3)) {
+    telemetry.addData("Path", "Leg 2: %4.1f S Elapsed", runtime.seconds());
+    telemetry.update();
+}
+
+// Step 3: Drive backward for 1 second
+leftDrive.setPower(-FORWARD_SPEED);
+rightDrive.setPower(-FORWARD_SPEED);
+runtime.reset();
+while (opModeIsActive() && (runtime.seconds() < 1.0)) {
+    telemetry.addData("Path", "Leg 3: %4.1f S Elapsed", runtime.seconds());
+    telemetry.update();
+}
+
+// Step 4: Stop
+leftDrive.setPower(0);
+rightDrive.setPower(0);
+```
+
+Notice that each leg uses a `while (opModeIsActive() && ...)` loop rather than `sleep()`. This is important: if the driver presses **STOP** mid-run, the `opModeIsActive()` check causes the loop to exit immediately and the robot stops safely.
+
+**When to use it:** Great for a first autonomous when you have no encoders wired, or when you just need to verify that your drivetrain runs at all. Expect ±10–20% path variation run to run due to battery level and surface friction.
+
+**Key limitation:** The robot travels a different real-world distance every run depending on battery voltage and floor surface. A freshly charged battery pushes more current and drives farther in the same time than a half-depleted one. Use `RobotAutoDriveByEncoder_Linear` once you have encoders connected.
+
+<Tip>
+  Start here on day one of autonomous development. The time-based approach lets you get a working routine quickly so you can focus on your game strategy, then swap to encoder-based control once your hardware is stable.
+</Tip>
+
+---
+
+## RobotAutoDriveByEncoder\_Linear
+
+**Accurate, repeatable distance control using motor encoders.** This sample replaces fixed time sleeps with `RUN_TO_POSITION` mode — the motor controllers count encoder ticks and stop the motors automatically when the target position is reached. The robot travels a consistent real-world distance on every run regardless of battery level.
+
+### The COUNTS\_PER\_INCH constant
+
+The core of encoder-based driving is calculating how many encoder ticks correspond to one inch of wheel travel:
+
+```java
+static final double COUNTS_PER_MOTOR_REV    = 1440;    // eg: TETRIX Motor Encoder
+static final double DRIVE_GEAR_REDUCTION    = 1.0;     // No External Gearing.
+static final double WHEEL_DIAMETER_INCHES   = 4.0;     // For figuring circumference
+static final double COUNTS_PER_INCH         = (COUNTS_PER_MOTOR_REV * DRIVE_GEAR_REDUCTION) /
+                                              (WHEEL_DIAMETER_INCHES * 3.1415);
+
+static final double DRIVE_SPEED             = 0.6;
+static final double TURN_SPEED              = 0.5;
+```
+
+You must update `COUNTS_PER_MOTOR_REV` for your specific motor (check the manufacturer's datasheet) and `WHEEL_DIAMETER_INCHES` for your wheels. If you have a gear reduction between the motor shaft and the wheel axle, set `DRIVE_GEAR_REDUCTION` accordingly (e.g., `2.0` for a 2:1 reduction).
+
+### Motor direction setup
+
+Before calling `waitForStart()`, the encoders are reset and the run mode is configured:
+
+```java
+leftDrive.setDirection(DcMotor.Direction.REVERSE);
+rightDrive.setDirection(DcMotor.Direction.FORWARD);
+
+leftDrive.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+rightDrive.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+
+leftDrive.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+rightDrive.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+```
+
+Resetting encoders ensures targets are always calculated relative to position zero, not whatever position the motors happened to be at when the OpMode started.
+
+### The encoderDrive() helper method
+
+All movement is handled by a single helper method with a built-in timeout parameter:
+
+```java
+public void encoderDrive(double speed,
+                         double leftInches, double rightInches,
+                         double timeoutS) {
+    int newLeftTarget;
+    int newRightTarget;
+
+    if (opModeIsActive()) {
+        // Convert inches to encoder counts and set targets
+        newLeftTarget  = leftDrive.getCurrentPosition()  + (int)(leftInches  * COUNTS_PER_INCH);
+        newRightTarget = rightDrive.getCurrentPosition() + (int)(rightInches * COUNTS_PER_INCH);
+        leftDrive.setTargetPosition(newLeftTarget);
+        rightDrive.setTargetPosition(newRightTarget);
+
+        // Switch to RUN_TO_POSITION and start the motors
+        leftDrive.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+        rightDrive.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+
+        runtime.reset();
+        leftDrive.setPower(Math.abs(speed));
+        rightDrive.setPower(Math.abs(speed));
+
+        // Wait until both motors reach their targets OR timeout expires
+        while (opModeIsActive() &&
+               (runtime.seconds() < timeoutS) &&
+               (leftDrive.isBusy() && rightDrive.isBusy())) {
+
+            telemetry.addData("Running to",  " %7d :%7d", newLeftTarget,  newRightTarget);
+            telemetry.addData("Currently at", " at %7d :%7d",
+                              leftDrive.getCurrentPosition(), rightDrive.getCurrentPosition());
+            telemetry.update();
+        }
+
+        // Stop motors and return to normal encoder mode
+        leftDrive.setPower(0);
+        rightDrive.setPower(0);
+        leftDrive.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        rightDrive.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+
+        sleep(250); // optional pause between moves
+    }
+}
+```
+
+**Why `(isBusy() && isBusy())` instead of `(isBusy() || isBusy())`?** Using `&&` means the loop exits as soon as *either* motor reaches its target, stopping motion quickly. Using `||` would wait for *both* motors to finish — more precise but risks the robot stalling if one motor overshoots. The sample uses `&&` as the safer default.
+
+The path defined in `runOpMode()`:
+
+```java
+// Forward 48", Turn right 12" (left forward, right back), Reverse 24"
+encoderDrive(DRIVE_SPEED,  48,  48, 5.0);  // S1: Forward 48 inches, 5 sec timeout
+encoderDrive(TURN_SPEED,   12, -12, 4.0);  // S2: Turn Right 12 inches, 4 sec timeout
+encoderDrive(DRIVE_SPEED, -24, -24, 4.0);  // S3: Reverse 24 inches, 4 sec timeout
+```
+
+Negative inch values produce reverse motion — the direction of travel, not motor power, is controlled by the sign of the distance parameter.
+
+<Note>
+  The timeout parameter in `encoderDrive()` is a safety mechanism. If a motor's encoder cable is unplugged, or the wheel is blocked, `isBusy()` will always return `true` and the robot would never stop without the timeout. Always set timeouts generously (at least 1.5× the expected move time) but never omit them.
+</Note>
+
+---
+
+## RobotAutoDriveByGyro\_Linear
+
+**Gyro-corrected straight-line driving with precise turning.** This sample combines encoder distance control with real-time heading correction from the REV Hub's built-in BNO055 IMU. Even small mechanical differences between the left and right drive motors can cause a robot to veer during a long straight move — the gyro detects that drift and adjusts power to the left and right motors to keep the robot on a straight heading.
+
+<Note>
+  This sample uses the legacy `BNO055IMU` class (the direct Bosch driver, not the universal IMU wrapper introduced in SDK 8.0). It is compatible with REV Control/Expansion Hubs shipped before July 2022. For newer hubs, see the `SensorIMUOrthogonal` sample and the [IMU documentation](/hardware/imu).
+</Note>
+
+### Tuning constants
+
+```java
+static final double COUNTS_PER_MOTOR_REV    = 537.7;   // eg: GoBILDA 312 RPM Yellow Jacket
+static final double DRIVE_GEAR_REDUCTION    = 1.0;
+static final double WHEEL_DIAMETER_INCHES   = 4.0;
+static final double COUNTS_PER_INCH         = (COUNTS_PER_MOTOR_REV * DRIVE_GEAR_REDUCTION) /
+                                              (WHEEL_DIAMETER_INCHES * 3.1415);
+
+static final double DRIVE_SPEED             = 0.4;   // Lower than ByEncoder for accuracy
+static final double TURN_SPEED              = 0.2;   // Slow turns for heading precision
+static final double HEADING_THRESHOLD       = 1.0;   // Degrees — how close is "on target"
+
+// Proportional gain for the heading controller
+static final double P_TURN_GAIN            = 0.02;   // For large heading errors (turns)
+static final double P_DRIVE_GAIN           = 0.03;   // For small heading errors (straight driving)
+```
+
+`P_TURN_GAIN` and `P_DRIVE_GAIN` are the key values to tune. **Increase** them if the robot doesn't correct heading strongly enough. **Decrease** them if the robot oscillates (hunts back and forth around the target heading).
+
+### The proportional heading controller
+
+The `getSteeringCorrection()` method computes a steering adjustment proportional to how far off-heading the robot is:
+
+```java
+public double getSteeringCorrection(double desiredHeading, double proportionalGain) {
+    targetHeading = desiredHeading;
+    robotHeading  = getRawHeading() - headingOffset;
+    headingError  = targetHeading - robotHeading;
+
+    // Normalize to ±180 degrees
+    while (headingError >  180)  headingError -= 360;
+    while (headingError <= -180) headingError += 360;
+
+    // Steering power = error × gain, clamped to ±1.0
+    return Range.clip(headingError * proportionalGain, -1, 1);
+}
+```
+
+This is a **proportional controller (P-controller)** — a simplified form of PID. The steering correction is small when the robot is nearly on heading and larger when it has drifted significantly. It applies the correction by splitting drive power between the left and right motors via `moveRobot(drive, turn)`.
+
+### High-level drive API
+
+The sample exposes three high-level methods you call in sequence to build a path:
+
+| Method | What it does |
+|---|---|
+| `driveStraight(speed, distanceInches, heading)` | Drives the specified distance while holding a compass heading using gyro correction. |
+| `turnToHeading(maxTurnSpeed, heading)` | Pivots in place until the gyro reads the target heading within `HEADING_THRESHOLD` degrees. |
+| `holdHeading(maxTurnSpeed, heading, holdTimeSeconds)` | Holds a heading for a brief time to let the robot physically settle before the next move. |
+
+The sample path:
+
+```java
+driveStraight(DRIVE_SPEED, 24.0,  0.0);    // Drive forward 24" on heading 0°
+turnToHeading(TURN_SPEED,  -45.0);          // Turn CW to -45°
+holdHeading(TURN_SPEED,    -45.0, 0.5);    // Hold -45° for 0.5 seconds
+
+driveStraight(DRIVE_SPEED, 17.0, -45.0);   // Drive 17" at -45° (diagonal)
+turnToHeading(TURN_SPEED,   45.0);          // Turn CCW to +45°
+holdHeading(TURN_SPEED,     45.0, 0.5);    // Hold +45° for 0.5 seconds
+
+driveStraight(DRIVE_SPEED, 17.0,  45.0);   // Drive 17" at +45° (diagonal back)
+turnToHeading(TURN_SPEED,    0.0);          // Return to 0°
+holdHeading(TURN_SPEED,      0.0, 1.0);    // Hold 0° for 1 second
+
+driveStraight(DRIVE_SPEED, -48.0, 0.0);    // Reverse 48" back to start
+```
+
+All headings are **absolute** — they are measured relative to the heading at the time `resetHeading()` was called (at match start). A positive angle is counter-clockwise (CCW) when viewed from above; a negative angle is clockwise (CW). This matches the FTC field coordinate system definition.
+
+---
+
+## RobotAutoDriveToLine\_Linear
+
+**Sensor-triggered stopping using a color sensor.** Instead of traveling a fixed distance or time, this sample drives forward slowly until an optical sensor detects a white line on the field surface, then immediately stops. It demonstrates an important autonomous pattern: letting the environment tell the robot when to stop, rather than pre-programming a distance.
+
+```java
+static final double WHITE_THRESHOLD = 0.5;  // Normalized alpha: 0.0 (dark) to 1.0 (bright)
+static final double APPROACH_SPEED  = 0.25; // Slow approach for reliable detection
+```
+
+The sensor used is a `NormalizedColorSensor` (REV Color Sensor V2 or V3, configured as `sensor_color`). The normalized alpha channel gives a brightness value between `0.0` (dark tile) and `1.0` (white tape), making the threshold independent of ambient lighting:
+
+```java
+colorSensor = hardwareMap.get(NormalizedColorSensor.class, "sensor_color");
+
+// Enable the white LED if the sensor supports it
+if (colorSensor instanceof SwitchableLight) {
+    ((SwitchableLight)colorSensor).enableLight(true);
+}
+
+// Set gain — higher gain = brighter reading at the same distance
+colorSensor.setGain(15);
+```
+
+The main drive loop:
+
+```java
+// Start moving
+leftDrive.setPower(APPROACH_SPEED);
+rightDrive.setPower(APPROACH_SPEED);
+
+// Drive until the sensor sees white, OR the driver presses STOP
+while (opModeIsActive() && (getBrightness() < WHITE_THRESHOLD)) {
+    sleep(5);
+}
+
+// Stop immediately when line detected
+leftDrive.setPower(0);
+rightDrive.setPower(0);
+```
+
+The `getBrightness()` helper reads the sensor and also outputs the current reading to telemetry, making it easy to observe the value during the `INIT` phase and calibrate `WHITE_THRESHOLD` before the match:
+
+```java
+double getBrightness() {
+    NormalizedRGBA colors = colorSensor.getNormalizedColors();
+    telemetry.addData("Light Level (0 to 1)", "%4.2f", colors.alpha);
+    telemetry.update();
+    return colors.alpha;
+}
+```
+
+**Calibration tip from the sample:** During `init()` (before pressing PLAY), move the robot so the color sensor is directly over the white line and note the reading, then move it to bare tile and note that reading. Set `WHITE_THRESHOLD` to the midpoint between the two values.
+
+<Warning>
+  This sample has no timeout — if the robot never reaches a white line (wrong starting position, line not present, sensor disconnected), `opModeIsActive()` is the only safeguard. Add an `ElapsedTime` timeout to the `while` loop in your TeamCode version to prevent the robot from driving off the field.
+</Warning>
+
+---
+
+## Choosing the right approach
+
+<CardGroup cols={2}>
+  <Card title="ByTime" icon="clock">
+    **Best for:** First autonomous, no encoders available, quick proof of concept.  
+    **Accuracy:** Low — varies with battery and surface.  
+    **Hardware needed:** Two drive motors only.
+  </Card>
+  <Card title="ByEncoder" icon="ruler">
+    **Best for:** Reliable distance control, competition autonomous.  
+    **Accuracy:** High — consistent to within ½ inch on smooth surfaces.  
+    **Hardware needed:** Drive motors with encoders wired.
+  </Card>
+  <Card title="ByGyro" icon="compass">
+    **Best for:** Long straight runs, diagonal moves, precise turns.  
+    **Accuracy:** Very high — corrects heading in real time.  
+    **Hardware needed:** Encoders + BNO055 IMU (REV Hub).
+  </Card>
+  <Card title="ToLine" icon="eye">
+    **Best for:** Docking to a field element, absolute position correction.  
+    **Accuracy:** Depends on sensor placement and threshold calibration.  
+    **Hardware needed:** Drive motors + NormalizedColorSensor.
+  </Card>
+</CardGroup>

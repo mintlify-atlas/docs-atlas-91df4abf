@@ -1,0 +1,160 @@
+---
+title: "HardwareMap: accessing robot devices in your OpMode"
+sidebarTitle: "HardwareMap"
+description: "HardwareMap is the central registry for all configured hardware devices. Use hardwareMap.get() to retrieve motors, servos, sensors, and IMUs by name."
+---
+
+Every FTC OpMode gets a built-in field called `hardwareMap` — a live registry that bridges your Java code to the physical devices wired into your REV Control Hub or Expansion Hub. When the Robot Controller app loads your configuration file, it populates `hardwareMap` with every motor, servo, sensor, and IMU you named in that file. Your code then retrieves each device by type and by the exact string name you chose during configuration. If the name in your code doesn't match the name in the configuration, your OpMode will throw a `RobotCoreException` at runtime.
+
+## How `hardwareMap.get()` works
+
+The `get()` method takes two arguments: the **class** of the hardware interface you want and the **configuration name** as a string. It returns an instance of that interface backed by the real hardware.
+
+```java
+// Signature
+<T> T hardwareMap.get(Class<? extends T> classOrInterface, String deviceName)
+```
+
+The type parameter `T` lets the compiler check that you're assigning the result to a compatible variable. Common types include `DcMotor`, `DcMotorEx`, `Servo`, `CRServo`, `IMU`, `NormalizedColorSensor`, `DistanceSensor`, `TouchSensor`, and `VoltageSensor`.
+
+```java
+// Retrieving a variety of devices during init
+DcMotor     leftDrive   = hardwareMap.get(DcMotor.class,              "left_drive");
+DcMotor     rightDrive  = hardwareMap.get(DcMotor.class,              "right_drive");
+DcMotor     armMotor    = hardwareMap.get(DcMotor.class,              "arm");
+Servo       leftHand    = hardwareMap.get(Servo.class,                "left_hand");
+Servo       rightHand   = hardwareMap.get(Servo.class,                "right_hand");
+IMU         imu         = hardwareMap.get(IMU.class,                  "imu");
+NormalizedColorSensor colorSensor =
+    hardwareMap.get(NormalizedColorSensor.class, "sensor_color");
+DistanceSensor rangeSensor =
+    hardwareMap.get(DistanceSensor.class,        "sensor_range");
+```
+
+## Device configuration names
+
+The name string you pass to `get()` must **exactly** match the name you entered in the Robot Controller configuration file (found under the ☰ menu → *Configure Robot*). The official SDK samples use a consistent set of names — memorising them helps you run sample code without changes:
+
+| Hardware category | Configuration name(s) used in samples |
+|---|---|
+| Drive motors | `left_drive`, `right_drive` |
+| Arm motor | `arm` |
+| Servos | `left_hand`, `right_hand`, `claw` |
+| Color sensor | `sensor_color`, `sensor_color_distance` |
+| Distance sensor | `sensor_range` |
+| Touch sensor | `sensor_touch` |
+| IMU | `imu` |
+| IR sensor | `sensor_ir` |
+
+Names are case-sensitive. `"Left_Drive"` is not the same as `"left_drive"`.
+
+## When to initialize — always in the Init phase
+
+<Warning>
+  Since SDK 8.0, I2C devices (including the IMU, color sensors, and distance sensors) are initialized **lazily** — the actual hardware communication starts the first time you call a method on the device. This means the initialization *seems* to succeed even if the device is misconfigured or disconnected. Retrieve every device in your init phase, then call at least one method before `waitForStart()` to surface configuration errors early, before the match begins.
+</Warning>
+
+In a `LinearOpMode`, the init phase is everything that runs **before** `waitForStart()`. In an iterative OpMode it's the `init()` method. Never call `hardwareMap.get()` inside your run loop — the lookup has overhead and the SDK expects devices to be fetched once.
+
+```java
+@TeleOp(name = "Basic: Linear OpMode", group = "Linear Opmode")
+public class BasicOpMode_Linear extends LinearOpMode {
+
+    private DcMotor leftDrive  = null;
+    private DcMotor rightDrive = null;
+
+    @Override
+    public void runOpMode() {
+
+        // --- INIT PHASE: retrieve devices before waitForStart() ---
+        leftDrive  = hardwareMap.get(DcMotor.class, "left_drive");
+        rightDrive = hardwareMap.get(DcMotor.class, "right_drive");
+
+        // Set directions during init, not during the run loop
+        leftDrive.setDirection(DcMotor.Direction.REVERSE);
+        rightDrive.setDirection(DcMotor.Direction.FORWARD);
+
+        telemetry.addData("Status", "Initialized");
+        telemetry.update();
+
+        // --- WAIT FOR DRIVER PRESS PLAY ---
+        waitForStart();
+
+        // --- RUN PHASE: use devices retrieved above ---
+        while (opModeIsActive()) {
+            double drive = -gamepad1.left_stick_y;
+            double turn  =  gamepad1.right_stick_x;
+            leftDrive.setPower(Range.clip(drive + turn, -1.0, 1.0));
+            rightDrive.setPower(Range.clip(drive - turn, -1.0, 1.0));
+            telemetry.addData("Status", "Running");
+            telemetry.update();
+        }
+    }
+}
+```
+
+## Common hardware types at a glance
+
+<CardGroup cols={2}>
+  <Card title="DcMotor / DcMotorEx" icon="gear">
+    Brushed and brushless DC motors. `DcMotorEx` adds velocity control and PIDF tuning. See [Motors & Servos](/hardware/motors-servos).
+  </Card>
+  <Card title="Servo / CRServo" icon="rotate">
+    Positional servos (0.0–1.0) and continuous-rotation servos (–1.0–1.0). See [Motors & Servos](/hardware/motors-servos).
+  </Card>
+  <Card title="IMU" icon="compass">
+    Universal interface for both BNO055 and BHI260AP inertial measurement units. See [IMU](/hardware/imu).
+  </Card>
+  <Card title="Sensors" icon="eye">
+    Color, distance, touch, voltage, and more. See [Sensors](/hardware/sensors).
+  </Card>
+</CardGroup>
+
+## Encapsulating hardware in a separate class
+
+For larger robots it's cleaner to move all `hardwareMap.get()` calls into a dedicated hardware class and reuse it across multiple OpModes. The SDK ships a complete example of this pattern in `RobotHardware.java` (used together with `ConceptExternalHardwareClass.java`). The hardware class receives a reference to the calling OpMode so it can access `hardwareMap`:
+
+```java
+public class RobotHardware {
+
+    private LinearOpMode myOpMode = null;
+    private DcMotor leftDrive  = null;
+    private DcMotor rightDrive = null;
+    private DcMotor armMotor   = null;
+    private Servo   leftHand   = null;
+    private Servo   rightHand  = null;
+
+    public RobotHardware(LinearOpMode opmode) {
+        myOpMode = opmode;
+    }
+
+    /** Call once during init() before waitForStart(). */
+    public void init() {
+        leftDrive  = myOpMode.hardwareMap.get(DcMotor.class, "left_drive");
+        rightDrive = myOpMode.hardwareMap.get(DcMotor.class, "right_drive");
+        armMotor   = myOpMode.hardwareMap.get(DcMotor.class, "arm");
+        leftHand   = myOpMode.hardwareMap.get(Servo.class,   "left_hand");
+        rightHand  = myOpMode.hardwareMap.get(Servo.class,   "right_hand");
+
+        leftDrive.setDirection(DcMotor.Direction.REVERSE);
+        rightDrive.setDirection(DcMotor.Direction.FORWARD);
+
+        leftHand.setPosition(MID_SERVO);
+        rightHand.setPosition(MID_SERVO);
+
+        myOpMode.telemetry.addData(">", "Hardware Initialized");
+        myOpMode.telemetry.update();
+    }
+}
+```
+
+<Note>
+  The `hardwareMap` field on an OpMode and the `myOpMode.hardwareMap` field accessed from a helper class refer to the same underlying object — they are the same registry, just accessed from different scopes.
+</Note>
+
+## Next steps
+
+- Configure motors and servos → [Motors & Servos](/hardware/motors-servos)
+- Read sensor values → [Sensors](/hardware/sensors)
+- Set up the IMU for heading control → [IMU](/hardware/imu)
+- Learn about OpMode structure → [OpModes overview](/opmodes/overview)

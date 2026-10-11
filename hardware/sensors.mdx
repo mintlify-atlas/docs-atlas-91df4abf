@@ -1,0 +1,257 @@
+---
+title: "Reading FTC sensors: color, distance, touch, and voltage"
+sidebarTitle: "Sensors"
+description: "Access color, distance, touch, and voltage sensors through typed HardwareMap lookups. Each sensor returns specific units and supports polling from your OpMode loop."
+---
+
+Sensors give your robot information about itself and its environment — from detecting the color of a game piece on the field to measuring battery voltage before a match. The SDK models every sensor as a Java interface: you retrieve an instance from `hardwareMap`, and then call its methods inside your run loop to poll the latest readings. This page covers the most common sensor types, with code drawn directly from `SensorColor.java` and `SensorREV2mDistance.java`.
+
+<Note>
+  Since SDK 8.0, I2C sensors (including color, distance, and IMU) are initialized **lazily** — the actual I2C communication begins on the first method call, not on `hardwareMap.get()`. Always call at least one sensor method during the init phase so that any wiring or configuration problems surface before the match starts rather than during autonomous.
+</Note>
+
+## General pattern
+
+Every sensor follows the same three-step pattern:
+
+<Steps>
+  <Step title="Declare and retrieve in init">
+    Call `hardwareMap.get()` with the sensor interface class and its configuration name before `waitForStart()`.
+  </Step>
+  <Step title="Poll in the run loop">
+    Call the sensor's read methods inside `while (opModeIsActive())` (or `loop()` in an iterative OpMode) to get fresh data each cycle.
+  </Step>
+  <Step title="Display with telemetry">
+    Send values to the Driver Station screen with `telemetry.addData()` and call `telemetry.update()` once per loop iteration.
+  </Step>
+</Steps>
+
+## Color sensor (`NormalizedColorSensor`)
+
+The SDK recommends using `NormalizedColorSensor` rather than the older `ColorSensor` interface. Normalized values are always in the range **0.0 to 1.0** regardless of which physical sensor you use, making your code portable across sensor generations.
+
+**Configuration name:** `sensor_color`
+
+```java
+NormalizedColorSensor colorSensor =
+    hardwareMap.get(NormalizedColorSensor.class, "sensor_color");
+```
+
+### Enabling the LED
+
+Some color sensors have a controllable illumination LED. If your sensor implements `SwitchableLight`, you can toggle it programmatically:
+
+```java
+if (colorSensor instanceof SwitchableLight) {
+    ((SwitchableLight) colorSensor).enableLight(true);
+}
+```
+
+<Note>
+  REV Color Sensors V2 and later have a **physical switch** on the board to control the LED instead of a software interface. Check your sensor's documentation.
+</Note>
+
+### Reading color channels
+
+```java
+NormalizedRGBA colors = colorSensor.getNormalizedColors();
+
+float red   = colors.red;    // 0.0 – 1.0
+float green = colors.green;  // 0.0 – 1.0
+float blue  = colors.blue;   // 0.0 – 1.0
+float alpha = colors.alpha;  // overall luminance, 0.0 – 1.0
+```
+
+### Converting to HSV
+
+Android's `Color` utility makes it easy to convert normalized RGBA to hue/saturation/value:
+
+```java
+final float[] hsvValues = new float[3];
+Color.colorToHSV(colors.toColor(), hsvValues);
+
+float hue        = hsvValues[0];  // 0 – 360 degrees
+float saturation = hsvValues[1];  // 0.0 – 1.0
+float value      = hsvValues[2];  // 0.0 – 1.0
+```
+
+### Gain adjustment
+
+In low-light conditions, raw sensor values can be very small. Multiply them before conversion with `setGain()`:
+
+```java
+colorSensor.setGain(2.0f);  // values < 1 are valid but shrink the output range
+```
+
+Start around `2.0` and increase if readings are consistently near zero. If all channels are pinned at `1.0`, the gain is too high.
+
+### Combo sensors: color + distance
+
+REV Color Sensors also expose short-range IR proximity distance. Cast to `DistanceSensor` to access it:
+
+```java
+if (colorSensor instanceof DistanceSensor) {
+    double distCm = ((DistanceSensor) colorSensor).getDistance(DistanceUnit.CM);
+    telemetry.addData("Distance (cm)", "%.3f", distCm);
+}
+```
+
+The proximity measurement is only reliable at very short range (a few centimetres). For longer distances, use a dedicated time-of-flight sensor.
+
+### Full color sensor loop
+
+```java
+// --- Init ---
+NormalizedColorSensor colorSensor =
+    hardwareMap.get(NormalizedColorSensor.class, "sensor_color");
+if (colorSensor instanceof SwitchableLight) {
+    ((SwitchableLight) colorSensor).enableLight(true);
+}
+colorSensor.setGain(2.0f);
+
+waitForStart();
+
+// --- Run loop ---
+while (opModeIsActive()) {
+    NormalizedRGBA colors = colorSensor.getNormalizedColors();
+
+    telemetry.addLine()
+        .addData("Red",   "%.3f", colors.red)
+        .addData("Green", "%.3f", colors.green)
+        .addData("Blue",  "%.3f", colors.blue);
+    telemetry.addData("Alpha", "%.3f", colors.alpha);
+
+    if (colorSensor instanceof DistanceSensor) {
+        telemetry.addData("Distance (cm)", "%.3f",
+            ((DistanceSensor) colorSensor).getDistance(DistanceUnit.CM));
+    }
+    telemetry.update();
+}
+```
+
+## Distance sensor — REV 2m Time-of-Flight (`DistanceSensor`)
+
+The REV Robotics 2m Time-of-Flight (ToF) sensor uses laser ranging to measure distances up to ~2 metres.
+
+**Configuration name:** `sensor_range`
+
+```java
+DistanceSensor sensorRange =
+    hardwareMap.get(DistanceSensor.class, "sensor_range");
+```
+
+### Reading distance
+
+Pass any `DistanceUnit` constant to `getDistance()`:
+
+```java
+double distMm    = sensorRange.getDistance(DistanceUnit.MM);
+double distCm    = sensorRange.getDistance(DistanceUnit.CM);
+double distMetres= sensorRange.getDistance(DistanceUnit.METER);
+double distInch  = sensorRange.getDistance(DistanceUnit.INCH);
+```
+
+### Rev2mDistanceSensor extras
+
+Cast to the concrete class for model-specific diagnostics:
+
+```java
+Rev2mDistanceSensor tof = (Rev2mDistanceSensor) sensorRange;
+
+telemetry.addData("Model ID",      "%x", tof.getModelID());
+telemetry.addData("Timed out?",    tof.didTimeoutOccur());
+```
+
+### Full distance sensor loop
+
+```java
+// --- Init ---
+DistanceSensor sensorRange =
+    hardwareMap.get(DistanceSensor.class, "sensor_range");
+
+waitForStart();
+
+// --- Run loop (from SensorREV2mDistance.java) ---
+while (opModeIsActive()) {
+    telemetry.addData("range mm",  "%.01f", sensorRange.getDistance(DistanceUnit.MM));
+    telemetry.addData("range cm",  "%.01f", sensorRange.getDistance(DistanceUnit.CM));
+    telemetry.addData("range m",   "%.01f", sensorRange.getDistance(DistanceUnit.METER));
+    telemetry.addData("range in",  "%.01f", sensorRange.getDistance(DistanceUnit.INCH));
+    telemetry.update();
+}
+```
+
+## Touch sensor (`TouchSensor`)
+
+A digital touch (bump) sensor reports a simple boolean — pressed or not pressed.
+
+**Configuration name:** `sensor_touch`
+
+```java
+TouchSensor touchSensor = hardwareMap.get(TouchSensor.class, "sensor_touch");
+
+// In the run loop:
+if (touchSensor.isPressed()) {
+    motor.setPower(0.0);  // stop when bumper is hit
+}
+```
+
+`isPressed()` returns `true` when the sensor's button or lever is physically activated.
+
+## Voltage sensor (`VoltageSensor`)
+
+Battery voltage isn't a named device in the configuration file — the Control Hub and Expansion Hub expose it automatically. Iterate over the `voltageSensor` iterable to find the first reading:
+
+```java
+// --- In init or the run loop ---
+double voltage = 0.0;
+for (VoltageSensor sensor : hardwareMap.voltageSensor) {
+    voltage = sensor.getVoltage();
+    break; // use the first hub found
+}
+telemetry.addData("Battery (V)", "%.2f", voltage);
+```
+
+A fully charged 12V FTC battery reads around **12.5–13.5 V**. Below **11 V** you may notice reduced motor performance.
+
+## Analog input (`AnalogInput`)
+
+For sensors that output a raw voltage (potentiometers, analog range finders, etc.) use `AnalogInput`:
+
+```java
+AnalogInput potentiometer = hardwareMap.get(AnalogInput.class, "pot");
+double volts = potentiometer.getVoltage();  // 0.0 – 3.3 V typically
+```
+
+## Digital channel (`DigitalChannel`)
+
+For digital I/O (limit switches, hall-effect sensors) use `DigitalChannel`:
+
+```java
+DigitalChannel limitSwitch = hardwareMap.get(DigitalChannel.class, "digin");
+limitSwitch.setMode(DigitalChannel.Mode.INPUT);  // configure as input during init
+
+boolean pressed = !limitSwitch.getState();  // logic is inverted on most boards
+```
+
+## Sensor configuration names reference
+
+The following names are used throughout the official SDK samples. Your team may choose different names — what matters is that the string in your Java code matches the name in the Robot Controller configuration file exactly.
+
+| Sensor type | Sample configuration name |
+|---|---|
+| Color sensor | `sensor_color` |
+| Color + distance combo | `sensor_color_distance` |
+| ToF distance sensor | `sensor_range` |
+| Touch / bump sensor | `sensor_touch` |
+| IR sensor | `sensor_ir` |
+| Optical distance sensor | `sensor_ods` |
+| Light sensor | `sensor_light` |
+| Digital input | `digin` |
+| Digital output | `digout` |
+
+## Next steps
+
+- Retrieve sensors by name → [HardwareMap](/hardware/hardware-map)
+- Drive motors and servos → [Motors & Servos](/hardware/motors-servos)
+- Use the IMU for heading → [IMU](/hardware/imu)
