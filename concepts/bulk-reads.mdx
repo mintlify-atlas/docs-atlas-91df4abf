@@ -1,7 +1,7 @@
 ---
 title: "Optimizing I2C performance with REV Hub bulk reads"
 sidebarTitle: "Bulk Reads"
-description: "Use LynxModule bulk-read caching to dramatically reduce I2C transaction count and shorten your OpMode's control loop cycle time on REV Control and Expansion Hubs."
+description: "Use LynxModule bulk-read caching to cut I2C transaction count and shorten your OpMode control loop cycle time on REV Control and Expansion Hubs."
 ---
 
 Every time your OpMode calls `motor.getCurrentPosition()`, the SDK sends a request over the I2C bus to the REV Control Hub or Expansion Hub, waits for a response, and returns the value. On a robot with four drive encoders and four additional sensors, that is eight round-trip transactions per loop — and each one takes real time. If your control loop feels sluggish, or your measured loop time is higher than expected, the I2C transaction overhead is almost certainly the cause. The **bulk-read caching** feature in `LynxModule` solves this by fetching all encoder positions, velocities, digital inputs, and analog inputs in a single transaction per hub, then serving subsequent reads from an in-memory cache.

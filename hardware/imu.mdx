@@ -1,7 +1,7 @@
 ---
 title: "Universal IMU interface for BNO055 and BHI260AP sensors"
 sidebarTitle: "IMU"
-description: "Use the universal IMU interface to read yaw, pitch, and roll angles from either the BNO055 or BHI260AP IMU. Specify your REV Hub mounting orientation for accurate readings."
+description: "Use the universal IMU interface to read yaw, pitch, and roll from BNO055 or BHI260AP. Configure hub mounting orientation for accurate robot-centric angles."
 ---
 
 SDK 8.1 introduced a single universal `IMU` interface that works with both the BNO055 chip found in older REV Expansion Hubs and Control Hubs, and the newer BHI260AP chip found in current Control Hubs. Instead of writing separate code for each sensor generation, you configure the hub's physical mounting orientation once and then read robot-centric yaw, pitch, and roll angles regardless of which chip is underneath. This page explains how to determine your hub type, how to describe its mounting orientation, and how to read angles from your OpMode.

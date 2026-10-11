@@ -1,5 +1,5 @@
 ---
-title: "Iterative OpMode: event-driven robot programs"
+title: "Iterative OpMode: callback-driven robot programs in FTC"
 sidebarTitle: "Iterative OpMode"
 description: "OpMode (iterative) provides discrete lifecycle callbacks — init(), loop(), start(), stop() — running on a dedicated thread for predictable cycle times."
 ---
@@ -100,7 +100,7 @@ public void stop() {
 ```
 
 <Note>
-  As of **SDK 8.1**, the `msStuckDetectInit`, `msStuckDetectInitLoop`, `msStuckDetectStart`, and `msStuckDetectLoop` fields are **deprecated**. These fields previously imposed time limits on the init and loop callbacks, but with the dedicated-thread architecture introduced in 8.1, those limits are no longer enforced for `init()` and `loop()`. Only `stop()` retains a hard time limit (1 second). Remove any references to the deprecated fields from your code.
+  As of **SDK 8.1**, the `msStuckDetectInit`, `msStuckDetectInitLoop`, `msStuckDetectStart`, `msStuckDetectLoop`, and `msStuckDetectStop` fields are all **deprecated**. The dedicated-thread architecture introduced in 8.1 means `init()`, `init_loop()`, `start()`, and `loop()` no longer have any time limit, so those four fields are unused. `stop()` still has a time limit, but it is now hardcoded at **1 second** and cannot be changed via `msStuckDetectStop`. Remove any references to the deprecated fields from your code.
 </Note>
 
 ## Complete example: BasicOpMode\_Iterative

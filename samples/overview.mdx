@@ -112,14 +112,20 @@ See [TeleOp Samples](/samples/robot-teleop) for a detailed walkthrough.
 
 | Class | Description |
 |---|---|
+| `ConceptCompassCalibration` | Step-by-step calibration routine for an MR compass sensor, saving calibration data. |
+| `ConceptExploringIMUOrientation` | Interactive tool to explore how IMU axis definitions change with different hub mounting orientations. |
 | `ConceptExternalHardwareClass` | Shows how to move hardware initialization into a separate class (`RobotHardware.java`) shared by multiple OpModes. Must be copied alongside `RobotHardware`. |
-| `ConceptMotorBulkRead` | Demonstrates reading all encoder values in a single bulk I²C transaction for higher loop rates. |
-| `ConceptTelemetry` | Shows advanced telemetry formatting including captions, values, lines, and retained data. |
 | `ConceptGamepadRumble` | Uses the gamepad rumble motor for driver feedback — timed pulses and pattern sequences. |
 | `ConceptGamepadTouchpad` | Reads the touchpad finger position on Logitech F310 / Xbox-style gamepads. |
-| `ConceptScanServo` | Sweeps a servo back and forth across its full range — useful for finding servo limits. |
+| `ConceptMotorBulkRead` | Demonstrates reading all encoder values in a single bulk I²C transaction for higher loop rates. |
+| `ConceptNullOp` | A minimal do-nothing OpMode. Useful as a placeholder or to verify the Driver Station connection. |
 | `ConceptRampMotorSpeed` | Gradually accelerates and decelerates a motor to reduce mechanical shock. |
 | `ConceptRevSPARKMini` | Controls a REV SPARK Mini motor controller (brushed DC motor via PWM servo port). |
+| `ConceptScanServo` | Sweeps a servo back and forth across its full range — useful for finding servo limits. |
+| `ConceptSoundsASJava` | Plays audio sound files from the Robot Controller phone using Android Java sound APIs. |
+| `ConceptSoundsOnBotJava` | Plays audio sound files using OnBotJava-compatible sound APIs. |
+| `ConceptSoundsSKYSTONE` | Plays the SKYSTONE game-season sound files shipped with the SDK. |
+| `ConceptTelemetry` | Shows advanced telemetry formatting including captions, values, lines, and retained data. |
 
 </Accordion>
 
@@ -127,12 +133,19 @@ See [TeleOp Samples](/samples/robot-teleop) for a detailed walkthrough.
 
 | Class | Description |
 |---|---|
-| `SensorIMUOrthogonal` | Reads heading, pitch, and roll from the REV Hub built-in IMU using the SDK 8.0+ universal IMU interface. Hub mounted orthogonally (flat). |
-| `SensorIMUNonOrthogonal` | Same as above but with the hub mounted at an angle — shows how to remap axes. |
-| `SensorColor` | Reads RGBA and HSV values from a REV Color Sensor V2/V3. Also shows gain adjustment. |
-| `SensorREV2mDistance` | Reads distance in mm from a REV 2m Time-of-Flight Distance Sensor. |
 | `SensorBNO055IMU` | Legacy BNO055 IMU sample using the older `BNO055IMU` class (pre-SDK 8.0 hubs). |
 | `SensorBNO055IMUCalibration` | Step-by-step calibration routine for the BNO055, saving calibration data to a file. |
+| `SensorColor` | Reads RGBA and HSV values from a REV Color Sensor V2/V3. Also shows gain adjustment. |
+| `SensorIMUNonOrthogonal` | Reads heading, pitch, and roll from the REV Hub built-in IMU (SDK 8.0+) with the hub mounted at an angle — shows how to remap axes. |
+| `SensorIMUOrthogonal` | Reads heading, pitch, and roll from the REV Hub built-in IMU using the SDK 8.0+ universal IMU interface. Hub mounted orthogonally (flat). |
+| `SensorKLNavxMicro` | Reads heading and other values from a Kauai Labs navX-Micro IMU sensor. |
+| `SensorMRColor` | Reads color values from a Modern Robotics color sensor. |
+| `SensorMRCompass` | Reads heading from a Modern Robotics compass sensor. |
+| `SensorMRGyro` | Reads heading and rotation rate from a Modern Robotics gyro sensor. |
+| `SensorMRIrSeeker` | Reads signal angle and strength from a Modern Robotics IR seeker sensor. |
+| `SensorMROpticalDistance` | Reads distance from a Modern Robotics optical distance sensor. |
+| `SensorMRRangeSensor` | Reads distance from a Modern Robotics ultrasonic/optical range sensor. |
+| `SensorREV2mDistance` | Reads distance from a REV 2m Time-of-Flight Distance Sensor. |
 
 </Accordion>
 
@@ -141,10 +154,13 @@ See [TeleOp Samples](/samples/robot-teleop) for a detailed walkthrough.
 | Class | Description |
 |---|---|
 | `ConceptTensorFlowObjectDetection` | Uses TFOD (TensorFlow Object Detection) with the built-in RC phone camera to detect game elements. |
-| `ConceptTensorFlowObjectDetectionWebcam` | Same as above, but using a USB webcam instead of the phone camera. |
+| `ConceptTensorFlowObjectDetectionSwitchableCameras` | TFOD with the ability to switch between multiple cameras at runtime. |
+| `ConceptTensorFlowObjectDetectionWebcam` | TFOD using a USB webcam instead of the phone camera. |
+| `ConceptVuforiaDriveToTargetWebcam` | Drives autonomously toward a Vuforia target using webcam-based pose estimation. |
 | `ConceptVuforiaFieldNavigation` | Field navigation using Vuforia target images and the phone camera for absolute field position. |
 | `ConceptVuforiaFieldNavigationWebcam` | Same as above using a USB webcam. |
-| `ConceptVuforiaDriveToTargetWebcam` | Drives autonomously toward a Vuforia target using webcam-based pose estimation. |
+| `ConceptVuMarkIdentification` | Identifies VuMark targets (older game seasons) using the phone camera. |
+| `ConceptVuMarkIdentificationWebcam` | Identifies VuMark targets using a USB webcam. |
 
 </Accordion>
 

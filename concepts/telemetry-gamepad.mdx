@@ -23,6 +23,10 @@ telemetry.addData("Heading (deg)", imu.getRobotYawPitchRollAngles().getYaw(Angle
 telemetry.update(); // Required in LinearOpMode to flush to Driver Station
 ```
 
+<Note>
+  `telemetry.update()` is **required** in `LinearOpMode` — without it, nothing is ever sent to the Driver Station. In iterative `OpMode` (subclasses of `OpMode`), the framework automatically calls `telemetry.update()` at the end of each `loop()` invocation, so explicit calls are optional there. When in doubt, call it explicitly.
+</Note>
+
 `addData` accepts any `Object` as the value argument and calls `toString()` on it, so you can pass integers, doubles, booleans, or even enum values directly.
 
 ### Printf-style formatting

@@ -1,7 +1,7 @@
 ---
 title: "Reading FTC sensors: color, distance, touch, and voltage"
 sidebarTitle: "Sensors"
-description: "Access color, distance, touch, and voltage sensors through typed HardwareMap lookups. Each sensor returns specific units and supports polling from your OpMode loop."
+description: "Access color, distance, touch, and voltage sensors via HardwareMap. Each type uses a typed interface and supports polling from your OpMode loop."
 ---
 
 Sensors give your robot information about itself and its environment — from detecting the color of a game piece on the field to measuring battery voltage before a match. The SDK models every sensor as a Java interface: you retrieve an instance from `hardwareMap`, and then call its methods inside your run loop to poll the latest readings. This page covers the most common sensor types, with code drawn directly from `SensorColor.java` and `SensorREV2mDistance.java`.

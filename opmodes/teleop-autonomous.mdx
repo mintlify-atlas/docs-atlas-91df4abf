@@ -108,6 +108,13 @@ Adding `turn` to the left side and subtracting it from the right creates the dif
 A four-wheel holonomic drivetrain can move in any direction — including sideways (strafing) — by mixing three independent motion axes: axial (forward/back), lateral (left/right strafe), and yaw (rotation). The `BasicOmniOpMode_Linear` sample demonstrates this pattern:
 
 ```java
+// Motor directions for a direct-drive Mecanum robot.
+// If any wheel runs backward on a forward-stick push, flip FORWARD ↔ REVERSE for that motor.
+leftFrontDrive.setDirection(DcMotor.Direction.REVERSE);
+leftBackDrive.setDirection(DcMotor.Direction.REVERSE);
+rightFrontDrive.setDirection(DcMotor.Direction.FORWARD);
+rightBackDrive.setDirection(DcMotor.Direction.FORWARD);
+
 // Read three axes from the gamepads
 double axial   = -gamepad1.left_stick_y;   // forward/back (negate: stick forward = positive)
 double lateral =  gamepad1.left_stick_x;   // strafe left/right
